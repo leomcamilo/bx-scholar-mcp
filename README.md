@@ -83,7 +83,94 @@ SJR + Qualis CAPES + Harzing's JQL (ABS, ABDC, CNRS, FNEGE, VHB) — three ranki
 
 ---
 
-## 🚀 Quick Start
+## 🤖 Agent Self-Setup
+
+> **This section is written FOR AI agents.** If you are an LLM agent and a user gave you this repo link, follow these steps to self-configure.
+
+### What you need from the user
+
+Ask the user for these values BEFORE starting setup:
+
+| Variable | Required? | What to ask |
+|----------|-----------|-------------|
+| `POLITE_EMAIL` | **REQUIRED** | "What email should I use for academic API access? (OpenAlex, CrossRef, Unpaywall use this for polite rate limits — not a login, just identification)" |
+| `TAVILY_API_KEY` | Optional | "Do you have a Tavily API key for web search? (skip if not — web search tool won't work but everything else will)" |
+| `S2_API_KEY` | Optional | "Do you have a Semantic Scholar API key? (free at semanticscholar.org — without it, S2 tools may be rate-limited)" |
+
+### Setup steps
+
+**Step 1: Clone the repo**
+```bash
+git clone https://github.com/leomcamilo/bx-scholar-mcp.git ~/.local/share/bx-scholar-mcp
+cd ~/.local/share/bx-scholar-mcp
+```
+
+**Step 2: Create .env file**
+```bash
+cat > .env << EOF
+POLITE_EMAIL=<email from user>
+TAVILY_API_KEY=<key from user, or leave empty>
+S2_API_KEY=<key from user, or leave empty>
+EOF
+```
+
+**Step 3: Register as MCP server**
+
+For **OpenClaw** — add to `openclaw.json` under `mcp.servers`:
+```json
+"bx-scholar": {
+  "command": "uv",
+  "args": ["run", "python", "run_server.py"],
+  "env": {
+    "POLITE_EMAIL": "<email>",
+    "TAVILY_API_KEY": "${TAVILY_API_KEY}",
+    "S2_API_KEY": "${S2_API_KEY}"
+  },
+  "cwd": "<path-to-cloned-repo>"
+}
+```
+
+For **Claude Code** — run:
+```bash
+claude mcp add bx-scholar -- uv run --directory <path-to-repo> run_server.py
+```
+
+For **Claude Desktop / Cursor** — add to MCP config JSON:
+```json
+{
+  "mcpServers": {
+    "bx-scholar": {
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/leomcamilo/bx-scholar-mcp", "bx-scholar"],
+      "env": { "POLITE_EMAIL": "<email>" }
+    }
+  }
+}
+```
+
+**Step 4: Verify**
+
+After registering, test with:
+- `search_openalex("artificial intelligence")` — should return papers
+- `lookup_journal_ranking("0001-4273")` — should return Academy of Management Journal (JQL data is included)
+
+### What works immediately (no downloads needed)
+
+- ✅ All 25 tools (API-based)
+- ✅ All 21 skill resources
+- ✅ All 8 prompts
+- ✅ JQL rankings (842 business/management journals — included in repo)
+
+### What needs extra data (optional downloads)
+
+- ⬇️ **SJR rankings** (32K journals) — `update_rankings()` tool or manual download from scimagojr.com
+- ⬇️ **Qualis CAPES** (170K entries, Brazilian) — manual download from sucupira.capes.gov.br
+
+Without SJR/Qualis, ranking tools return `"N/A"` for those systems. The JQL data covers the top 842 journals and works immediately.
+
+---
+
+## 🚀 Quick Start (for humans)
 
 ### Prerequisites
 
