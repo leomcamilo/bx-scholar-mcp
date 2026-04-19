@@ -90,7 +90,13 @@ SJR + Qualis CAPES + Harzing's JQL (ABS, ABDC, CNRS, FNEGE, VHB) — three ranki
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/) (recommended) or pip
 
-### Install & Run
+### Option 1: Zero install (uvx)
+
+```bash
+uvx --from git+https://github.com/leomcamilo/bx-scholar-mcp bx-scholar
+```
+
+### Option 2: Clone & run
 
 ```bash
 git clone https://github.com/leomcamilo/bx-scholar-mcp.git
@@ -101,12 +107,13 @@ uv run run_server.py         # that's it
 
 ### First Run
 
-On first start, the server will warn about missing ranking files. You have two options:
+JQL rankings (842 business/management journals) are **included in the repo** — they work out of the box.
 
-1. **Use the `update_rankings` tool** after the server starts (the agent can call it)
-2. **Download manually** (see [Journal Rankings](#-journal-rankings))
+For SJR (32K journals) and Qualis CAPES (170K entries), the server will warn on startup. Options:
+1. **Use the `update_rankings` tool** — the agent can call it after the server starts
+2. **Download manually** — see [Journal Rankings](#-journal-rankings)
 
-The server works without ranking files — tools will return `"N/A"` for rankings data.
+The server works without SJR/Qualis files — those tools will return `"N/A"` for missing data.
 
 ---
 
@@ -115,6 +122,22 @@ The server works without ranking files — tools will return `"N/A"` for ranking
 ### Claude Desktop
 
 Add to your config (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
+
+```json
+{
+  "mcpServers": {
+    "bx-scholar": {
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/leomcamilo/bx-scholar-mcp", "bx-scholar"],
+      "env": {
+        "POLITE_EMAIL": "your@email.com"
+      }
+    }
+  }
+}
+```
+
+Or if you cloned the repo locally:
 
 ```json
 {
@@ -133,6 +156,10 @@ Add to your config (`~/Library/Application Support/Claude/claude_desktop_config.
 ### Claude Code
 
 ```bash
+# Zero install (from GitHub directly)
+claude mcp add bx-scholar -- uvx --from git+https://github.com/leomcamilo/bx-scholar-mcp bx-scholar
+
+# Or from local clone
 claude mcp add bx-scholar -- uv run --directory /path/to/bx-scholar-mcp run_server.py
 ```
 
