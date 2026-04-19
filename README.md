@@ -12,7 +12,7 @@ Search 250M+ papers. Verify every citation. Never hallucinate a reference again.
 [![OpenAlex](https://img.shields.io/badge/OpenAlex-250M+_papers-E5543E.svg)](https://openalex.org)
 [![arXiv](https://img.shields.io/badge/arXiv-Grey_Literature-B31B1B.svg)](https://arxiv.org)
 
-[Features](#-features) · [Quick Start](#-quick-start) · [Configuration](#-configuration) · [Tools Reference](#-tools-reference) · [Prompts](#-mcp-prompts) · [Rankings](#-journal-rankings)
+[Features](#-features) · [Quick Start](#-quick-start) · [Configuration](#-configuration) · [Tools Reference](#-tools-reference) · [Resources](#-mcp-resources) · [Prompts](#-mcp-prompts) · [Rankings](#-journal-rankings)
 
 ---
 
@@ -31,12 +31,13 @@ Agent: *removes citation instead of fabricating it*
 ### What makes it different
 
 - **25 MCP tools** spanning the entire research lifecycle — from discovery to submission
+- **21 MCP resources** — complete research workflow skills agents can read and follow
+- **8 workflow prompts** — structured protocols for research pipeline, R&R, qualitative analysis, theory development, meta-analysis
 - **Anti-hallucination** — verify every citation against CrossRef + OpenAlex before using it
-- **Real journal rankings** — local SJR (32K+ journals) + Qualis CAPES (170K+ entries), not LLM guesses
+- **Real journal rankings** — local SJR (32K+ journals) + Qualis CAPES (170K+ entries) + Harzing's JQL (ABS/ABDC/CNRS/FNEGE/VHB), not LLM guesses
 - **Multi-source search** — OpenAlex, CrossRef, ArXiv, SciELO, Semantic Scholar, Tavily in one interface
 - **Citation intelligence** — know which citations are influential vs. incidental (Semantic Scholar)
 - **Full-text pipeline** — Unpaywall OA check → PDF download → text extraction (marker-pdf / PyMuPDF)
-- **4 workflow prompts** — plug-and-play research protocols any agent can follow
 
 ---
 
@@ -67,11 +68,14 @@ Check Open Access via Unpaywall. Download PDFs. Extract text to markdown with ML
 ### 🧠 Citation Intelligence
 Semantic Scholar integration: TLDR summaries, influential citation counts, and exact citation context snippets. Know *how* papers cite each other.
 
-### 📋 Research Prompts
-Pre-built workflow prompts for systematic literature search, journal calibration, citation verification, and full research pipelines.
+### 📋 Research Prompts & Resources
+8 workflow prompts + 21 skill resources covering the full research lifecycle. Agents can read detailed protocols for any phase — from discovery to R&R.
 
 ### 🇧🇷 Brazilian Research
 SciELO integration for Brazilian/LATAM Open Access papers. Qualis CAPES rankings. Ready for RAE, RAP, BAR, RAUSP and more.
+
+### 📊 Multi-Ranking Intelligence
+SJR + Qualis CAPES + Harzing's JQL (ABS, ABDC, CNRS, FNEGE, VHB) — three ranking systems for comprehensive journal assessment.
 
 </td>
 </tr>
@@ -201,13 +205,13 @@ cp .env.example .env
 | `get_paper_by_doi` | Full metadata by DOI — OpenAlex first, CrossRef fallback |
 | `get_paper_citations` | Forward snowballing (who cites this?) or backward (references) |
 | `get_author_works` | Author profile: h-index, works sorted by citations |
-| `get_journal_info` | Journal metadata + SJR quartile + Qualis classification |
+| `get_journal_info` | Journal metadata + SJR quartile + Qualis classification + JQL rankings |
 
 ### 📊 Journal Rankings (3 tools)
 
 | Tool | Description |
 |------|-------------|
-| `lookup_journal_ranking` | **Instant** local lookup — SJR + Qualis by ISSN or name. No API call. |
+| `lookup_journal_ranking` | **Instant** local lookup — SJR + Qualis + JQL by ISSN or name. No API call. |
 | `get_top_journals_for_field` | Top journals in a field, sorted by SJR score |
 | `get_journal_papers` | Search papers *within* a specific journal by ISSN |
 
@@ -247,26 +251,72 @@ cp .env.example .env
 
 | Tool | Description |
 |------|-------------|
-| `update_rankings` | Download SJR / copy Qualis files. Restart server after updating. |
+| `update_rankings` | Download SJR / copy Qualis / copy JQL files. Restart server after updating. |
+
+---
+
+## 📦 MCP Resources
+
+21 research workflow skills exposed as readable resources. Agents can access these via `skills://` URIs to learn comprehensive protocols for any research phase.
+
+| Resource URI | Skill | Description |
+|-------------|-------|-------------|
+| `skills://research-pipeline` | Orchestrator | Complete 13-phase pipeline with UX protocol, backtracking, search protocol, curation, verification gates |
+| `skills://journal-calibrator` | Journal DNA | Target journal pattern analysis — methods, theory, writing style, citation network, reviewer prediction |
+| `skills://discovery` | Discovery | Gap identification, trend mapping, topic-data compatibility, venue selection |
+| `skills://systematic-search` | Search | Autonomous multi-source search execution with term expansion, deduplication, snowballing |
+| `skills://curation` | Curation | SJR/Qualis/JQL tier classification, influential citation assessment, predatory journal detection |
+| `skills://paper-reader` | Reading | Structured reading notes (fichamento), rapid triage, Obsidian-compatible format, full-text pipeline |
+| `skills://literature-review` | Lit Review | Argumentative thematic review, citation context analysis, field mapping via bibliometrics |
+| `skills://methodology` | Methods | Quali/quanti/mixed design, PLS-SEM/CB-SEM decision matrix, analysis_spec output |
+| `skills://results-discussion` | Results | Results + discussion writing for qual/quant/mixed, literature connection, practical implications |
+| `skills://academic-writing` | Writing | CARS model intro, conclusion, abstract, style calibration to target journal |
+| `skills://internal-review` | Review | Adversarial review, section-by-section checklist, desk rejection simulation |
+| `skills://revise-resubmit` | R&R | Reviewer comment classification, strategy selection, response letter generation |
+| `skills://reference-manager` | References | Citation verification, BibTeX generation, APA/ABNT/Chicago formatting |
+| `skills://formatter` | Formatting | Journal formatting, cover letter, highlights, CRediT statement, pre-submission checklist |
+| `skills://submission` | Submission | Venue selection, reviewer suggestion, submission package, cascade strategy |
+| `skills://conclusion` | Conclusion | Result synthesis, contribution articulation (theoretical/practical/methodological), limitations |
+| `skills://prisma` | PRISMA | PRISMA 2020 systematic review protocol with automated MCP execution |
+| `skills://compliance` | Compliance | Ethics (IRB/CEP), LGPD, Open Science, FAIR data, pre-registration, CRediT |
+| `skills://theory-development` | Theory | Theory building/extension/integration, Whetten's criteria, nomological networks |
+| `skills://qualitative-analysis` | Qual Analysis | Gioia method, thematic analysis (Braun & Clarke), content analysis, process tracing |
+| `skills://meta-analysis` | Meta-Analysis | Effect sizes, forest plots, heterogeneity, publication bias, moderator analysis |
+
+### How agents use resources
+
+Resources are read-only documents that agents can request to learn workflows. Unlike tools (which execute actions) or prompts (which provide templates), resources provide comprehensive reference material:
+
+```
+Agent reads: skills://journal-calibrator
+→ Gets detailed protocol for building a Journal DNA profile
+→ Follows the protocol using MCP tools (get_journal_info, get_journal_papers, etc.)
+```
 
 ---
 
 ## 📋 MCP Prompts
 
-Pre-built research workflow prompts that any agent can request:
+8 pre-built research workflow prompts that any agent can request:
 
 | Prompt | Use Case |
 |--------|----------|
-| **`research_pipeline`** | Full 7-phase academic research workflow: calibration → discovery → search → curation → full-text → review → verification |
-| **`journal_calibrator`** | Build a "Journal DNA" profile — analyze a target journal's methods, theories, writing style, and citation patterns to calibrate your paper |
-| **`citation_verification`** | Anti-hallucination protocol — step-by-step guide to verify every reference before submission |
-| **`literature_search`** | Systematic search protocol with parallel multi-source queries, deduplication, and snowballing |
+| **`research_pipeline`** | Full 13-phase academic research workflow: calibration → discovery → methodology → compliance → search → curation → reading → lit review → analysis → results → writing → review → submission |
+| **`journal_calibrator`** | Build a "Journal DNA" profile — analyze a target journal's methods, theories, writing style, citation patterns, and probable reviewers |
+| **`citation_verification`** | Anti-hallucination protocol — 7-step guide to verify every reference, check retractions, and audit quality |
+| **`literature_search`** | Systematic search protocol with parallel multi-source queries, deduplication, snowballing, and quality filtering |
+| **`revise_and_resubmit`** | Full R&R protocol — parse reviewer comments, define strategy (accept/rebut/compromise), generate response letter |
+| **`qualitative_analysis`** | Protocol selection guide — Gioia method, thematic analysis, content analysis, process tracing |
+| **`theory_development`** | Theory building/extension/integration guide with Whetten's criteria and formal propositions |
+| **`meta_analysis_protocol`** | Meta-analysis workflow — effect sizes, forest plots, heterogeneity, publication bias, AMSTAR 2 |
 
 Agents can request prompts to get structured research guidance alongside the tools.
 
 ---
 
 ## 📚 Journal Rankings
+
+BX-Scholar supports three complementary ranking systems for comprehensive journal assessment.
 
 ### SJR (SCImago Journal Rank)
 
@@ -284,20 +334,37 @@ Agent: use update_rankings tool
 → Falls back to manual instructions if blocked
 ```
 
-**Updating:** When new SJR rankings are released (annually), repeat the download. The `update_rankings` tool handles this.
-
 ### Qualis CAPES
 
-Qualis classifications (**170,000+ entries**) for Brazilian academic assessment. No public download URL — requires manual download.
+Qualis classifications (**170,000+ entries**) for Brazilian academic assessment (CAPES is the Brazilian federal agency for graduate education). No public download URL — requires manual download.
 
-1. Visit [Plataforma Sucupira](https://sucupira.capes.gov.br)
+1. Visit [Plataforma Sucupira](https://sucupira.capes.gov.br) (Brazilian graduate evaluation platform)
 2. Download the Qualis classification spreadsheet (XLSX)
 3. Save as `data/qualis_capes.xlsx`, or use:
    ```
    Agent: update_rankings(qualis_path="/path/to/downloaded/file.xlsx")
    ```
 
-> **Note:** The server works perfectly without ranking files. Tools that depend on rankings will return `"N/A"` for missing data, and all other tools function normally.
+### Harzing's JQL (Journal Quality List)
+
+The JQL aggregates rankings from **5 international business school associations**:
+
+| Ranking | Organization | Country | Levels |
+|---------|-------------|---------|--------|
+| **ABS** | Association of Business Schools | UK | 4*, 4, 3, 2, 1 |
+| **ABDC** | Australian Business Deans Council | Australia | A*, A, B, C |
+| **CNRS** | Centre National de la Recherche Scientifique | France | 1, 2, 3, 4 |
+| **FNEGE** | Fondation Nationale pour l'Enseignement de la Gestion | France | 1, 2, 3, 4 |
+| **VHB** | Verband der Hochschullehrer fur Betriebswirtschaft | Germany | A+, A, B, C, D |
+
+1. Visit [harzing.com/resources/journal-quality-list](https://harzing.com/resources/journal-quality-list)
+2. Download the JQL spreadsheet (XLSX)
+3. Save as `data/jql_rankings.xlsx`, or use:
+   ```
+   Agent: update_rankings(jql_path="/path/to/downloaded/file.xlsx")
+   ```
+
+> **Note:** The server works perfectly without ranking files. Tools that depend on rankings will return `"N/A"` for missing data, and all other tools function normally. Rankings from all three systems (SJR, Qualis, JQL) are returned together when available.
 
 ---
 
@@ -310,16 +377,22 @@ Qualis classifications (**170,000+ entries**) for Brazilian academic assessment.
 ├─────────────────────────────────────────────────────────────┤
 │                  BX-Scholar MCP Server                       │
 │                                                              │
-│  Tools (25)              │  Prompts (4)                      │
+│  Tools (25)              │  Prompts (8)                      │
 │  ├── Literature Search   │  ├── research_pipeline            │
 │  ├── Paper Metadata      │  ├── journal_calibrator           │
 │  ├── Journal Rankings    │  ├── citation_verification        │
-│  ├── Bibliometrics       │  └── literature_search            │
-│  ├── Citation Verify     │                                   │
-│  ├── Full-Text Pipeline  │  Data (local)                     │
-│  ├── SciELO              │  ├── SJR CSV (32K journals)       │
-│  ├── Semantic Scholar    │  └── Qualis XLSX (170K entries)   │
+│  ├── Bibliometrics       │  ├── literature_search            │
+│  ├── Citation Verify     │  ├── revise_and_resubmit          │
+│  ├── Full-Text Pipeline  │  ├── qualitative_analysis         │
+│  ├── SciELO              │  ├── theory_development           │
+│  ├── Semantic Scholar    │  └── meta_analysis_protocol       │
 │  └── Rankings Mgmt       │                                   │
+│                           │  Resources (21)                   │
+│  Data (local)             │  ├── skills://research-pipeline   │
+│  ├── SJR CSV (32K)       │  ├── skills://journal-calibrator  │
+│  ├── Qualis XLSX (170K)  │  ├── skills://discovery           │
+│  └── JQL XLSX (ABS/ABDC) │  ├── ... (18 more skills)        │
+│                           │  └── skills://meta-analysis       │
 ├─────────────────────────────────────────────────────────────┤
 │                     External APIs                            │
 │  OpenAlex │ CrossRef │ ArXiv │ SciELO │ Semantic Scholar     │
