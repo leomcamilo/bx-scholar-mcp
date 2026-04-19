@@ -347,22 +347,20 @@ Qualis classifications (**170,000+ entries**) for Brazilian academic assessment 
 
 ### Harzing's JQL (Journal Quality List)
 
-The JQL aggregates rankings from **5 international business school associations**:
+The JQL aggregates rankings from **5 international business school associations** across **842 journals** (v72, 14 ranking columns):
 
 | Ranking | Organization | Country | Levels |
 |---------|-------------|---------|--------|
-| **ABS** | Association of Business Schools | UK | 4*, 4, 3, 2, 1 |
+| **ABS/AJG** | Association of Business Schools | UK | 4*, 4, 3, 2, 1 |
 | **ABDC** | Australian Business Deans Council | Australia | A*, A, B, C |
 | **CNRS** | Centre National de la Recherche Scientifique | France | 1, 2, 3, 4 |
 | **FNEGE** | Fondation Nationale pour l'Enseignement de la Gestion | France | 1, 2, 3, 4 |
 | **VHB** | Verband der Hochschullehrer fur Betriebswirtschaft | Germany | A+, A, B, C, D |
 
-1. Visit [harzing.com/resources/journal-quality-list](https://harzing.com/resources/journal-quality-list)
-2. Download the JQL spreadsheet (XLSX)
-3. Save as `data/jql_rankings.xlsx`, or use:
-   ```
-   Agent: update_rankings(jql_path="/path/to/downloaded/file.xlsx")
-   ```
+**JQL data is included in the repo** (`data/jql_rankings.csv`) -- no download needed. To update with a newer version:
+1. Download the ISSN PDF from [harzing.com/resources/journal-quality-list](https://harzing.com/resources/journal-quality-list)
+2. Parse it: `python scripts/parse_jql.py /path/to/jql_issn.pdf data/jql_rankings.csv`
+3. Or use the tool: `update_rankings(jql_pdf_path="/path/to/jql_issn.pdf")`
 
 > **Note:** The server works perfectly without ranking files. Tools that depend on rankings will return `"N/A"` for missing data, and all other tools function normally. Rankings from all three systems (SJR, Qualis, JQL) are returned together when available.
 
@@ -391,7 +389,7 @@ The JQL aggregates rankings from **5 international business school associations*
 │  Data (local)             │  ├── skills://research-pipeline   │
 │  ├── SJR CSV (32K)       │  ├── skills://journal-calibrator  │
 │  ├── Qualis XLSX (170K)  │  ├── skills://discovery           │
-│  └── JQL XLSX (ABS/ABDC) │  ├── ... (18 more skills)        │
+│  └── JQL CSV (842, incl) │  ├── ... (18 more skills)        │
 │                           │  └── skills://meta-analysis       │
 ├─────────────────────────────────────────────────────────────┤
 │                     External APIs                            │

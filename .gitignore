@@ -3,6 +3,7 @@ __pycache__/
 .env
 data/sjr_rankings.csv
 data/qualis_capes.xlsx
+# Note: data/jql_rankings.csv IS committed (small, public data — 842 journals)
 *.egg-info/
 dist/
 .venv/
