@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.env
+data/sjr_rankings.csv
+data/qualis_capes.xlsx
+*.egg-info/
+dist/
+.venv/
