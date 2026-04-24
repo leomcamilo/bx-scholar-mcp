@@ -1,0 +1,71 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "bx-scholar-core"
+version = "0.1.0"
+description = "MCP server for academic research — search, rankings, citation verification, bibliometrics, full-text pipeline"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+authors = [
+    {name = "Leonardo Camilo", email = "leo@baxi.ia.br"},
+]
+keywords = [
+    "mcp",
+    "academic-research",
+    "openalex",
+    "crossref",
+    "scholar",
+    "citation-verification",
+    "bibliometrics",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering",
+]
+dependencies = [
+    "httpx>=0.28.0",
+    "mcp[cli]>=1.12.3",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "structlog>=24.0.0",
+    "tenacity>=8.0.0",
+    "aiolimiter>=1.1.0",
+    "rapidfuzz>=3.0.0",
+    "duckdb>=1.0.0",
+    "openpyxl>=3.1.0",
+    "pymupdf>=1.25.0",
+    "python-dotenv>=1.1.0",
+]
+
+[project.optional-dependencies]
+marker = ["marker-pdf>=1.0.0"]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=5.0.0",
+    "vcrpy>=6.0.0",
+    "mypy>=1.10.0",
+]
+
+[project.scripts]
+bx-scholar-core = "bx_scholar_core.server:main"
+
+[project.urls]
+Homepage = "https://github.com/leomcamilo/bx-scholar-mcp"
+Issues = "https://github.com/leomcamilo/bx-scholar-mcp/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/bx_scholar_core"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
