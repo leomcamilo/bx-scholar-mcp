@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from typing import TYPE_CHECKING
 
 from bx_scholar_core.clients.arxiv import ArXivClient
 from bx_scholar_core.clients.crossref import CrossRefClient
@@ -15,6 +16,9 @@ from bx_scholar_core.config import Settings
 from bx_scholar_core.dedup import deduplicate
 from bx_scholar_core.logging import get_logger
 from bx_scholar_core.models.paper import Paper
+
+if TYPE_CHECKING:
+    from bx_scholar_core.cache import CacheStore
 
 logger = get_logger(__name__)
 
@@ -31,7 +35,7 @@ def _papers_to_json(papers: list[Paper], total: int = 0, meta: dict | None = Non
     return json.dumps(result, ensure_ascii=False, indent=2)
 
 
-def register_search_tools(mcp: object, settings: Settings) -> None:
+def register_search_tools(mcp: object, settings: Settings, cache: CacheStore | None = None) -> None:
     """Register search-related tools on the MCP server."""
     from mcp.server.fastmcp import FastMCP
 
@@ -57,7 +61,7 @@ def register_search_tools(mcp: object, settings: Settings) -> None:
 
         async def _search_openalex() -> None:
             nonlocal total
-            client = OpenAlexClient(settings.polite_email, settings.user_agent)
+            client = OpenAlexClient(settings.polite_email, settings.user_agent, cache=cache)
             try:
                 papers, count = await client.search(
                     query, year_from, year_to, journal_issn, sort=sort, per_page=per_page
@@ -70,7 +74,7 @@ def register_search_tools(mcp: object, settings: Settings) -> None:
 
         async def _search_crossref() -> None:
             nonlocal total
-            client = CrossRefClient(settings.polite_email, settings.user_agent)
+            client = CrossRefClient(settings.polite_email, settings.user_agent, cache=cache)
             try:
                 papers, count = await client.search(query, year_from, year_to, rows=per_page)
                 all_papers.extend(papers)
@@ -80,7 +84,7 @@ def register_search_tools(mcp: object, settings: Settings) -> None:
                 await client.close()
 
         async def _search_arxiv() -> None:
-            client = ArXivClient(user_agent=settings.user_agent)
+            client = ArXivClient(user_agent=settings.user_agent, cache=cache)
             try:
                 papers = await client.search(query, max_results=min(per_page, 20))
                 all_papers.extend(papers)
@@ -89,7 +93,7 @@ def register_search_tools(mcp: object, settings: Settings) -> None:
                 await client.close()
 
         async def _search_scielo() -> None:
-            client = SciELOClient(settings.polite_email, settings.user_agent)
+            client = SciELOClient(settings.polite_email, settings.user_agent, cache=cache)
             try:
                 papers = await client.search(query, year_from, year_to, max_results=per_page)
                 all_papers.extend(papers)
@@ -104,7 +108,7 @@ def register_search_tools(mcp: object, settings: Settings) -> None:
                 year_str = f"{year_from}-{year_to}"
             elif year_from:
                 year_str = f"{year_from}-"
-            client = SemanticScholarClient(settings.s2_api_key, settings.user_agent)
+            client = SemanticScholarClient(settings.s2_api_key, settings.user_agent, cache=cache)
             try:
                 papers, count = await client.search(query, year=year_str, limit=per_page)
                 all_papers.extend(papers)
@@ -116,7 +120,7 @@ def register_search_tools(mcp: object, settings: Settings) -> None:
         async def _search_tavily() -> None:
             if not settings.tavily_api_key:
                 return
-            client = TavilyClient(settings.tavily_api_key, settings.user_agent)
+            client = TavilyClient(settings.tavily_api_key, settings.user_agent, cache=cache)
             try:
                 results = await client.search(query, max_results=min(per_page, 10))
                 source_counts["tavily"] = len(results)

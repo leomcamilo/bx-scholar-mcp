@@ -38,6 +38,7 @@ class ArXivClient(AsyncHTTPClient):
                 "sortBy": sort_by,
                 "sortOrder": "descending",
             },
+            cache_policy=("search_results", 3600),
         )
 
         root = ET.fromstring(resp.text)

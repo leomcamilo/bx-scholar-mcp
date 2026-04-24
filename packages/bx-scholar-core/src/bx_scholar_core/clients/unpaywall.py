@@ -17,9 +17,9 @@ class UnpaywallClient(AsyncHTTPClient):
     rate_limit = 10.0
     max_rate_period = 1.0
 
-    def __init__(self, polite_email: str, user_agent: str = "") -> None:
+    def __init__(self, polite_email: str, user_agent: str = "", **kwargs) -> None:
         ua = user_agent or f"BX-Scholar/0.1.0 (mailto:{polite_email})"
-        super().__init__(user_agent=ua)
+        super().__init__(user_agent=ua, **kwargs)
         self._polite_email = polite_email
 
     async def check_oa(self, doi: str) -> dict[str, Any]:
@@ -28,7 +28,11 @@ class UnpaywallClient(AsyncHTTPClient):
         Returns a dict with oa_status, is_oa, pdf_url, etc.
         """
         try:
-            resp = await self.get(f"/{doi}", params={"email": self._polite_email})
+            resp = await self.get(
+                f"/{doi}",
+                params={"email": self._polite_email},
+                cache_policy=("oa_status", 7 * 86400),
+            )
             data = resp.json()
 
             result: dict[str, Any] = {

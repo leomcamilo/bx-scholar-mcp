@@ -4,15 +4,21 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from bx_scholar_core.clients.unpaywall import UnpaywallClient
 from bx_scholar_core.config import Settings
 from bx_scholar_core.logging import get_logger
 
+if TYPE_CHECKING:
+    from bx_scholar_core.cache import CacheStore
+
 logger = get_logger(__name__)
 
 
-def register_fulltext_tools(mcp: object, settings: Settings) -> None:
+def register_fulltext_tools(
+    mcp: object, settings: Settings, cache: CacheStore | None = None
+) -> None:
     """Register full-text pipeline tools on the MCP server."""
     from mcp.server.fastmcp import FastMCP
 
@@ -22,7 +28,7 @@ def register_fulltext_tools(mcp: object, settings: Settings) -> None:
     async def check_open_access(doi: str) -> str:
         """Check if a paper has Open Access full-text available via Unpaywall.
         Returns OA status and PDF URL if available."""
-        client = UnpaywallClient(settings.polite_email, settings.user_agent)
+        client = UnpaywallClient(settings.polite_email, settings.user_agent, cache=cache)
         try:
             result = await client.check_oa(doi)
             return json.dumps(result, ensure_ascii=False, indent=2)

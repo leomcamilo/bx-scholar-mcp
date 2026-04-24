@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 import json
+from typing import TYPE_CHECKING
 
 from bx_scholar_core.clients.openalex import OpenAlexClient
 from bx_scholar_core.config import Settings
 from bx_scholar_core.id_resolver import resolve_id
 from bx_scholar_core.logging import get_logger
 
+if TYPE_CHECKING:
+    from bx_scholar_core.cache import CacheStore
+
 logger = get_logger(__name__)
 
 
-def register_get_tools(mcp: object, settings: Settings) -> None:
+def register_get_tools(mcp: object, settings: Settings, cache: CacheStore | None = None) -> None:
     """Register get/metadata tools on the MCP server."""
     from mcp.server.fastmcp import FastMCP
 
@@ -23,7 +27,7 @@ def register_get_tools(mcp: object, settings: Settings) -> None:
         """Get full metadata for a paper by DOI, arXiv ID, or OpenAlex ID.
         Accepts: '10.1234/test', 'https://doi.org/10.1234/test', 'W12345', '2401.12345'."""
         resolved = resolve_id(identifier)
-        client = OpenAlexClient(settings.polite_email, settings.user_agent)
+        client = OpenAlexClient(settings.polite_email, settings.user_agent, cache=cache)
         try:
             if resolved.id_type == "doi":
                 paper = await client.get_work(resolved.value)
@@ -31,6 +35,7 @@ def register_get_tools(mcp: object, settings: Settings) -> None:
                 resp = await client.get(
                     f"/works/https://openalex.org/{resolved.value}",
                     params=client._default_params(),
+                    cache_policy=("paper_metadata", 7 * 86400),
                 )
                 from bx_scholar_core.clients.openalex import _parse_work
 
@@ -63,7 +68,7 @@ def register_get_tools(mcp: object, settings: Settings) -> None:
     ) -> str:
         """Get author profile and works sorted by citation count.
         Returns h-index, works count, cited-by count, and top papers."""
-        client = OpenAlexClient(settings.polite_email, settings.user_agent)
+        client = OpenAlexClient(settings.polite_email, settings.user_agent, cache=cache)
         try:
             result = await client.get_author(author_name, per_page)
             if result:
@@ -85,7 +90,7 @@ def register_get_tools(mcp: object, settings: Settings) -> None:
     async def get_journal_info(issn_or_name: str) -> str:
         """Get journal metadata including impact metrics, scope, and rankings (SJR/Qualis/JQL).
         Accepts ISSN (e.g. '0001-4273') or journal name."""
-        client = OpenAlexClient(settings.polite_email, settings.user_agent)
+        client = OpenAlexClient(settings.polite_email, settings.user_agent, cache=cache)
         try:
             source = await client.get_source(issn_or_name)
             if not source:
@@ -123,7 +128,7 @@ def register_get_tools(mcp: object, settings: Settings) -> None:
         Essential for snowballing. Accepts DOI or OpenAlex ID."""
         resolved = resolve_id(identifier)
         doi = resolved.value if resolved.id_type == "doi" else identifier
-        client = OpenAlexClient(settings.polite_email, settings.user_agent)
+        client = OpenAlexClient(settings.polite_email, settings.user_agent, cache=cache)
         try:
             papers = await client.get_citations(doi, direction, per_page)
             return json.dumps(
@@ -148,7 +153,7 @@ def register_get_tools(mcp: object, settings: Settings) -> None:
         """Track keyword frequency in academic publications over time.
         keywords: comma-separated (max 5). Returns yearly counts per keyword."""
         kw_list = [k.strip() for k in keywords.split(",")][:5]
-        client = OpenAlexClient(settings.polite_email, settings.user_agent)
+        client = OpenAlexClient(settings.polite_email, settings.user_agent, cache=cache)
         try:
             trends: dict[str, dict[int, int]] = {}
             for kw in kw_list:

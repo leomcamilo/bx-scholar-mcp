@@ -1,9 +1,10 @@
-"""Base async HTTP client with retry, backoff, and rate limiting."""
+"""Base async HTTP client with retry, backoff, rate limiting, and optional caching."""
 
 from __future__ import annotations
 
+import asyncio
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 from aiolimiter import AsyncLimiter
@@ -15,6 +16,9 @@ from tenacity import (
 )
 
 from bx_scholar_core.logging import get_logger
+
+if TYPE_CHECKING:
+    from bx_scholar_core.cache.store import CacheStore
 
 logger = get_logger(__name__)
 
@@ -40,7 +44,7 @@ def _is_retryable(exc: BaseException) -> bool:
 
 
 class AsyncHTTPClient:
-    """Base HTTP client with retry, backoff, and per-host rate limiting.
+    """Base HTTP client with retry, backoff, per-host rate limiting, and optional caching.
 
     Subclasses set `base_url`, `rate_limit`, and `max_rate_period` to configure
     behavior for specific APIs.
@@ -52,10 +56,15 @@ class AsyncHTTPClient:
     max_retries: int = 3
     timeout: float = 30.0
 
-    def __init__(self, user_agent: str = "BX-Scholar/0.1.0") -> None:
+    def __init__(
+        self,
+        user_agent: str = "BX-Scholar/0.1.0",
+        cache: CacheStore | None = None,
+    ) -> None:
         self._user_agent = user_agent
         self._limiter = AsyncLimiter(self.rate_limit, self.max_rate_period)
         self._client: httpx.AsyncClient | None = None
+        self._cache = cache
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -80,9 +89,25 @@ class AsyncHTTPClient:
         url: str,
         params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
+        *,
+        cache_policy: tuple[str, int] | None = None,
     ) -> httpx.Response:
-        """Make a GET request with rate limiting and retry."""
+        """Make a GET request with rate limiting, retry, and optional caching.
+
+        cache_policy: optional (entity_type, ttl_seconds) tuple.
+        If set and a CacheStore is attached, responses are cached and reused.
+        """
         full_url = f"{self.base_url}{url}" if self.base_url and not url.startswith("http") else url
+
+        # Check cache before making HTTP request
+        if self._cache and cache_policy:
+            from bx_scholar_core.cache.store import make_cache_key
+
+            ck = make_cache_key(full_url, params)
+            cached = await self._cache.get(ck)
+            if cached is not None:
+                logger.debug("cache_hit", url=full_url, entity_type=cache_policy[0])
+                return httpx.Response(200, content=cached)
 
         @retry(
             retry=retry_if_exception(_is_retryable),
@@ -110,6 +135,11 @@ class AsyncHTTPClient:
                     retry_after = resp.headers.get("Retry-After")
                     msg = f"Rate limited (429). Retry-After: {retry_after}"
                     logger.warning("rate_limited", url=full_url, retry_after=retry_after)
+                    if retry_after:
+                        try:  # noqa: SIM105
+                            await asyncio.sleep(min(float(retry_after), 60))
+                        except ValueError:
+                            pass
                     raise RetryableHTTPError(429, msg)
 
                 if resp.status_code >= 500:
@@ -122,16 +152,38 @@ class AsyncHTTPClient:
 
                 return resp
 
-        return await _do_request()
+        resp = await _do_request()
+
+        # Store successful response in cache
+        if self._cache and cache_policy:
+            from bx_scholar_core.cache.store import make_cache_key
+
+            ck = make_cache_key(full_url, params)
+            entity_type, ttl = cache_policy
+            await self._cache.put(ck, entity_type, resp.content, ttl)
+
+        return resp
 
     async def post(
         self,
         url: str,
         json: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
+        *,
+        cache_policy: tuple[str, int] | None = None,
     ) -> httpx.Response:
-        """Make a POST request with rate limiting and retry."""
+        """Make a POST request with rate limiting, retry, and optional caching."""
         full_url = f"{self.base_url}{url}" if self.base_url and not url.startswith("http") else url
+
+        # Check cache before making HTTP request
+        if self._cache and cache_policy:
+            from bx_scholar_core.cache.store import make_cache_key
+
+            ck = make_cache_key(full_url, json)
+            cached = await self._cache.get(ck)
+            if cached is not None:
+                logger.debug("cache_hit", url=full_url, entity_type=cache_policy[0])
+                return httpx.Response(200, content=cached)
 
         @retry(
             retry=retry_if_exception(_is_retryable),
@@ -146,6 +198,12 @@ class AsyncHTTPClient:
                 resp = await client.post(full_url, json=json, headers=merged_headers)
 
                 if resp.status_code == 429:
+                    retry_after = resp.headers.get("Retry-After")
+                    if retry_after:
+                        try:  # noqa: SIM105
+                            await asyncio.sleep(min(float(retry_after), 60))
+                        except ValueError:
+                            pass
                     raise RetryableHTTPError(429)
                 if resp.status_code >= 500:
                     raise RetryableHTTPError(resp.status_code)
@@ -154,4 +212,14 @@ class AsyncHTTPClient:
 
                 return resp
 
-        return await _do_request()
+        resp = await _do_request()
+
+        # Store successful response in cache
+        if self._cache and cache_policy:
+            from bx_scholar_core.cache.store import make_cache_key
+
+            ck = make_cache_key(full_url, json)
+            entity_type, ttl = cache_policy
+            await self._cache.put(ck, entity_type, resp.content, ttl)
+
+        return resp

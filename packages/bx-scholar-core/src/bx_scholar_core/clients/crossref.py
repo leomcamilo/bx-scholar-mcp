@@ -59,9 +59,9 @@ class CrossRefClient(AsyncHTTPClient):
     rate_limit = 50.0
     max_rate_period = 1.0
 
-    def __init__(self, polite_email: str, user_agent: str = "") -> None:
+    def __init__(self, polite_email: str, user_agent: str = "", **kwargs) -> None:
         ua = user_agent or f"BX-Scholar/0.1.0 (mailto:{polite_email})"
-        super().__init__(user_agent=ua)
+        super().__init__(user_agent=ua, **kwargs)
 
     async def search(
         self,
@@ -89,7 +89,7 @@ class CrossRefClient(AsyncHTTPClient):
         if filters:
             params["filter"] = ",".join(filters)
 
-        resp = await self.get("/works", params=params)
+        resp = await self.get("/works", params=params, cache_policy=("search_results", 3600))
         data = resp.json()
         items = data.get("message", {}).get("items", [])
         total = data.get("message", {}).get("total-results", 0)
@@ -98,7 +98,7 @@ class CrossRefClient(AsyncHTTPClient):
     async def get_work(self, doi: str) -> Paper | None:
         """Get a single paper by DOI."""
         try:
-            resp = await self.get(f"/works/{doi}")
+            resp = await self.get(f"/works/{doi}", cache_policy=("paper_metadata", 7 * 86400))
             item = resp.json().get("message", {})
             return _parse_item(item)
         except NonRetryableHTTPError:
@@ -119,6 +119,7 @@ class CrossRefClient(AsyncHTTPClient):
                     "filter": f"from-pub-date:{year - 1},until-pub-date:{year + 1}",
                     "rows": 5,
                 },
+                cache_policy=("verification", 86400),
             )
             items = resp.json().get("message", {}).get("items", [])
             if not items:
@@ -139,7 +140,7 @@ class CrossRefClient(AsyncHTTPClient):
     async def check_retraction(self, doi: str) -> RetractionStatus:
         """Check if a paper has been retracted."""
         try:
-            resp = await self.get(f"/works/{doi}")
+            resp = await self.get(f"/works/{doi}", cache_policy=("verification", 86400))
             item = resp.json().get("message", {})
             updates = item.get("update-to") or []
             retracted = any(u.get("type") == "retraction" for u in updates)

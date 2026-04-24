@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 import json
+from typing import TYPE_CHECKING
 
 from bx_scholar_core.clients.openalex import OpenAlexClient
 from bx_scholar_core.clients.semantic_scholar import SemanticScholarClient
 from bx_scholar_core.config import Settings
 from bx_scholar_core.logging import get_logger
 
+if TYPE_CHECKING:
+    from bx_scholar_core.cache import CacheStore
+
 logger = get_logger(__name__)
 
 
-def register_cite_tools(mcp: object, settings: Settings) -> None:
+def register_cite_tools(mcp: object, settings: Settings, cache: CacheStore | None = None) -> None:
     """Register citation intelligence tools on the MCP server."""
     from mcp.server.fastmcp import FastMCP
 
@@ -23,7 +27,7 @@ def register_cite_tools(mcp: object, settings: Settings) -> None:
         """Get influential citations — citations where the citing paper substantially
         engages with this work (not just incidental mentions).
         Accepts DOI or Semantic Scholar paper ID."""
-        s2 = SemanticScholarClient(settings.s2_api_key, settings.user_agent)
+        s2 = SemanticScholarClient(settings.s2_api_key, settings.user_agent, cache=cache)
         try:
             results = await s2.get_influential_citations(doi_or_s2id, limit)
             influential = [r for r in results if r.get("is_influential")]
@@ -44,7 +48,7 @@ def register_cite_tools(mcp: object, settings: Settings) -> None:
     async def get_citation_context(citing_doi: str, cited_doi: str) -> str:
         """Get exact text snippets where one paper cites another.
         Useful for understanding HOW a paper is cited (background, method, result)."""
-        s2 = SemanticScholarClient(settings.s2_api_key, settings.user_agent)
+        s2 = SemanticScholarClient(settings.s2_api_key, settings.user_agent, cache=cache)
         try:
             result = await s2.get_citation_context(citing_doi, cited_doi)
             if result:
@@ -78,7 +82,7 @@ def register_cite_tools(mcp: object, settings: Settings) -> None:
         edges: list[dict] = []
         to_process: list[tuple[str, int]] = [(doi, 0) for doi in dois]
 
-        client = OpenAlexClient(settings.polite_email, settings.user_agent)
+        client = OpenAlexClient(settings.polite_email, settings.user_agent, cache=cache)
         try:
             while to_process and len(nodes) < max_nodes:
                 doi, level = to_process.pop(0)
@@ -127,7 +131,7 @@ def register_cite_tools(mcp: object, settings: Settings) -> None:
             return json.dumps({"error": "Need at least 2 DOIs"})
 
         citing_sets: dict[str, set[str]] = {}
-        client = OpenAlexClient(settings.polite_email, settings.user_agent)
+        client = OpenAlexClient(settings.polite_email, settings.user_agent, cache=cache)
         try:
             for doi in doi_list[:20]:
                 try:
@@ -139,6 +143,7 @@ def register_cite_tools(mcp: object, settings: Settings) -> None:
                             "per_page": 50,
                             "select": "id",
                         },
+                        cache_policy=("citations", 86400),
                     )
                     citing_sets[doi] = {w["id"] for w in resp.json().get("results", [])}
                 except Exception:

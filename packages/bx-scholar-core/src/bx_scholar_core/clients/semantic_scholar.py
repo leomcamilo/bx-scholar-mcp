@@ -56,8 +56,8 @@ class SemanticScholarClient(AsyncHTTPClient):
     max_rate_period = 1.0
     max_retries = 3
 
-    def __init__(self, api_key: str = "", user_agent: str = "") -> None:
-        super().__init__(user_agent=user_agent or "BX-Scholar/0.1.0")
+    def __init__(self, api_key: str = "", user_agent: str = "", **kwargs) -> None:
+        super().__init__(user_agent=user_agent or "BX-Scholar/0.1.0", **kwargs)
         self._api_key = api_key
         if api_key:
             self.rate_limit = 5.0
@@ -93,7 +93,9 @@ class SemanticScholarClient(AsyncHTTPClient):
             params["fieldsOfStudy"] = fields_of_study
 
         try:
-            resp = await self.get("/paper/search", params=params)
+            resp = await self.get(
+                "/paper/search", params=params, cache_policy=("search_results", 3600)
+            )
             data = resp.json()
             papers = [_parse_s2_paper(p) for p in data.get("data", [])]
             return papers, data.get("total", 0)
@@ -120,6 +122,7 @@ class SemanticScholarClient(AsyncHTTPClient):
                     ),
                     "limit": min(limit, 100),
                 },
+                cache_policy=("citations", 86400),
             )
             results = []
             for item in resp.json().get("data", []):
@@ -157,6 +160,7 @@ class SemanticScholarClient(AsyncHTTPClient):
                     "fields": "title,authors,year,externalIds,contexts,intents,isInfluential",
                     "limit": 500,
                 },
+                cache_policy=("citations", 86400),
             )
             cited_doi_lower = cited_doi.lower().replace("doi:", "")
             for item in resp.json().get("data", []):

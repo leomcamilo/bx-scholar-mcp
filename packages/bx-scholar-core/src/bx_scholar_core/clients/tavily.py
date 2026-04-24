@@ -17,8 +17,8 @@ class TavilyClient(AsyncHTTPClient):
     rate_limit = 5.0
     max_rate_period = 1.0
 
-    def __init__(self, api_key: str, user_agent: str = "") -> None:
-        super().__init__(user_agent=user_agent or "BX-Scholar/0.1.0")
+    def __init__(self, api_key: str, user_agent: str = "", **kwargs) -> None:
+        super().__init__(user_agent=user_agent or "BX-Scholar/0.1.0", **kwargs)
         self._api_key = api_key
 
     async def search(
@@ -41,7 +41,7 @@ class TavilyClient(AsyncHTTPClient):
         if include_domains:
             payload["include_domains"] = include_domains
 
-        resp = await self.post("/search", json=payload)
+        resp = await self.post("/search", json=payload, cache_policy=("web_search", 3600))
         data = resp.json()
 
         return [

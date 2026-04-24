@@ -83,9 +83,9 @@ class OpenAlexClient(AsyncHTTPClient):
     rate_limit = 10.0
     max_rate_period = 1.0
 
-    def __init__(self, polite_email: str, user_agent: str = "") -> None:
+    def __init__(self, polite_email: str, user_agent: str = "", **kwargs) -> None:
         ua = user_agent or f"BX-Scholar/0.1.0 (mailto:{polite_email})"
-        super().__init__(user_agent=ua)
+        super().__init__(user_agent=ua, **kwargs)
         self._polite_email = polite_email
 
     def _default_params(self) -> dict[str, str]:
@@ -120,7 +120,7 @@ class OpenAlexClient(AsyncHTTPClient):
         if filters:
             params["filter"] = ",".join(filters)
 
-        resp = await self.get("/works", params=params)
+        resp = await self.get("/works", params=params, cache_policy=("search_results", 3600))
         data = resp.json()
         papers = [_parse_work(w) for w in data.get("results", [])]
         total = data.get("meta", {}).get("count", 0)
@@ -134,6 +134,7 @@ class OpenAlexClient(AsyncHTTPClient):
             resp = await self.get(
                 f"/works/https://doi.org/{doi}",
                 params=self._default_params(),
+                cache_policy=("paper_metadata", 7 * 86400),
             )
             return _parse_work(resp.json())
         except NonRetryableHTTPError:
@@ -156,6 +157,7 @@ class OpenAlexClient(AsyncHTTPClient):
                     **self._default_params(),
                     "select": "id,referenced_works,cited_by_api_url",
                 },
+                cache_policy=("paper_metadata", 7 * 86400),
             )
             work_meta = resp_meta.json()
             openalex_id = (work_meta.get("id") or "").replace("https://openalex.org/", "")
@@ -170,6 +172,7 @@ class OpenAlexClient(AsyncHTTPClient):
                             "sort": "cited_by_count:desc",
                             "mailto": self._polite_email,
                         },
+                        cache_policy=("citations", 86400),
                     )
                 else:
                     resp = await self.get(
@@ -180,6 +183,7 @@ class OpenAlexClient(AsyncHTTPClient):
                             "per_page": min(per_page, 50),
                             "sort": "cited_by_count:desc",
                         },
+                        cache_policy=("citations", 86400),
                     )
             else:
                 ref_ids = (work_meta.get("referenced_works") or [])[:per_page]
@@ -193,6 +197,7 @@ class OpenAlexClient(AsyncHTTPClient):
                         "filter": f"openalex_id:{pipe}",
                         "per_page": min(per_page, 50),
                     },
+                    cache_policy=("citations", 86400),
                 )
 
             return [_parse_work(w) for w in resp.json().get("results", [])]
@@ -207,6 +212,7 @@ class OpenAlexClient(AsyncHTTPClient):
             resp = await self.get(
                 "/authors",
                 params={**self._default_params(), "search": name},
+                cache_policy=("author", 7 * 86400),
             )
             authors = resp.json().get("results", [])
             if not authors:
@@ -222,6 +228,7 @@ class OpenAlexClient(AsyncHTTPClient):
                     "sort": "cited_by_count:desc",
                     "per_page": min(per_page, 50),
                 },
+                cache_policy=("search_results", 3600),
             )
             works = [_parse_work(w) for w in resp_works.json().get("results", [])]
             return {
@@ -247,7 +254,9 @@ class OpenAlexClient(AsyncHTTPClient):
             params = {**self._default_params(), "search": issn_or_name}
 
         try:
-            resp = await self.get("/sources", params=params)
+            resp = await self.get(
+                "/sources", params=params, cache_policy=("journal_info", 30 * 86400)
+            )
             sources = resp.json().get("results", [])
             if not sources:
                 return None
@@ -269,6 +278,7 @@ class OpenAlexClient(AsyncHTTPClient):
                         "filter": f"default.search:{keyword},publication_year:{year}",
                         "per_page": 1,
                     },
+                    cache_policy=("keyword_trends", 86400),
                 )
                 counts[year] = resp.json().get("meta", {}).get("count", 0)
             except Exception:

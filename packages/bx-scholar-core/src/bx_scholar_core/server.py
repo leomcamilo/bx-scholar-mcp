@@ -6,6 +6,7 @@ import sys
 
 from mcp.server.fastmcp import FastMCP
 
+from bx_scholar_core.cache import CacheStore
 from bx_scholar_core.config import load_settings
 from bx_scholar_core.logging import get_logger, setup_logging
 from bx_scholar_core.rankings.service import RankingService
@@ -22,9 +23,15 @@ def create_server() -> FastMCP:
     ranking_service = RankingService(data_dir=settings.data_dir)
     ranking_service.load()
 
+    # Initialize cache
+    cache: CacheStore | None = None
+    if settings.cache_enabled and settings.cache_dir:
+        cache = CacheStore(db_path=settings.cache_dir / "bx_scholar_cache.duckdb")
+        logger.info("cache_initialized", path=str(settings.cache_dir / "bx_scholar_cache.duckdb"))
+
     # Create MCP server and register tools
     server = FastMCP("bx-scholar-core")
-    register_all_tools(server, settings, ranking_service)
+    register_all_tools(server, settings, ranking_service, cache)
 
     logger.info(
         "server_ready",

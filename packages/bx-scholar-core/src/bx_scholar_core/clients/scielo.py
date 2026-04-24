@@ -24,9 +24,9 @@ class SciELOClient(AsyncHTTPClient):
     rate_limit = 5.0
     max_rate_period = 1.0
 
-    def __init__(self, polite_email: str, user_agent: str = "") -> None:
+    def __init__(self, polite_email: str, user_agent: str = "", **kwargs) -> None:
         ua = user_agent or f"BX-Scholar/0.1.0 (mailto:{polite_email})"
-        super().__init__(user_agent=ua)
+        super().__init__(user_agent=ua, **kwargs)
         self._polite_email = polite_email
 
     async def search(
@@ -52,6 +52,7 @@ class SciELOClient(AsyncHTTPClient):
                     "per_page": min(max_results, 50),
                     "mailto": self._polite_email,
                 },
+                cache_policy=("search_results", 3600),
             )
             data = resp.json()
             papers: list[Paper] = []
@@ -73,6 +74,7 @@ class SciELOClient(AsyncHTTPClient):
             resp = await self.get(
                 SCIELO_SEARCH,
                 params={"q": query, "output": "json", "count": min(max_results, 50), "lang": "en"},
+                cache_policy=("search_results", 3600),
             )
             if "application/json" not in resp.headers.get("content-type", ""):
                 return []
