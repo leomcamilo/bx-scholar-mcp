@@ -22,6 +22,7 @@ ignore = [
     "T201",   # print — allowed in run_server.py (legacy) and scripts/
     "UP007",  # use X | Y for unions — keep Optional for compat
     "TC001",  # move first-party import to TYPE_CHECKING — too noisy with runtime usage
+    "TC002",  # move third-party import to TYPE_CHECKING — FastMCP etc. used at runtime
     "TC003",  # move stdlib import to TYPE_CHECKING — Path etc. used at runtime
 ]
 
