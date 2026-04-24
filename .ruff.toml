@@ -1,0 +1,36 @@
+target-version = "py311"
+line-length = 100
+
+[lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort
+    "UP",     # pyupgrade
+    "B",      # flake8-bugbear
+    "SIM",    # flake8-simplify
+    "RUF",    # ruff-specific rules
+    "TCH",    # type-checking imports
+    "TID",    # tidy imports
+    "PIE",    # misc lints
+    "T20",    # flake8-print (no print() in library code)
+    "PTH",    # flake8-use-pathlib
+]
+ignore = [
+    "E501",   # line too long — handled by formatter
+    "T201",   # print — allowed in run_server.py (legacy) and scripts/
+    "UP007",  # use X | Y for unions — keep Optional for compat
+]
+
+[lint.per-file-ignores]
+"run_server.py" = ["T201", "B", "SIM", "RUF", "TCH", "TID", "PIE", "PTH"]  # legacy, don't lint heavily
+"scripts/*" = ["T201"]  # scripts can print
+
+[lint.isort]
+known-first-party = ["bx_scholar_core", "bx_scholar_workflow"]
+
+[format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true
