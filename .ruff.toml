@@ -26,6 +26,8 @@ ignore = [
 [lint.per-file-ignores]
 "run_server.py" = ["T201", "B", "SIM", "RUF", "TCH", "TID", "PIE", "PTH"]  # legacy, don't lint heavily
 "scripts/*" = ["T201"]  # scripts can print
+"**/rankings/*.py" = ["TCH003"]  # Path used at runtime, not just annotations
+"**/tests/**" = ["TCH003"]  # test fixtures use Path at runtime
 
 [lint.isort]
 known-first-party = ["bx_scholar_core", "bx_scholar_workflow"]
