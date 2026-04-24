@@ -1,9 +1,35 @@
 __pycache__/
 *.pyc
 .env
+
+# Ranking data — not versioned, fetch via scripts/fetch_rankings.py or GitHub release
 data/sjr_rankings.csv
 data/qualis_capes.xlsx
-# Note: data/jql_rankings.csv IS committed (small, public data — 842 journals)
+data/jql_rankings.csv
+
+# Build artifacts
 *.egg-info/
 dist/
+build/
+
+# Virtual environments
 .venv/
+
+# IDE
+.idea/
+.vscode/
+
+# Testing / coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Ruff
+.ruff_cache/
+
+# mypy
+.mypy_cache/
+
+# DuckDB cache (runtime)
+*.duckdb
+*.duckdb.wal
