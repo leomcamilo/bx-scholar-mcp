@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-from bx_scholar_core.logging import setup_logging
 from bx_scholar_core.server import create_server
-
-setup_logging(level="WARNING")
 
 
 class TestCreateServer:

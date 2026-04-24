@@ -4,12 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from bx_scholar_core.logging import setup_logging
 from bx_scholar_core.rankings.jql import load_jql
 from bx_scholar_core.rankings.service import RankingService
 from bx_scholar_core.rankings.sjr import load_sjr
-
-setup_logging(level="WARNING")
 
 SJR_HEADER = "Title;Issn;SJR;SJR Best Quartile;H index;Country;Areas;Type;Publisher"
 SJR_ROW1 = "Academy of Management Journal;00014273, 19487169;15.123;Q1;200;United States;Business;journal;Academy of Management"

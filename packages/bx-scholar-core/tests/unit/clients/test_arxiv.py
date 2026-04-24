@@ -5,9 +5,6 @@ from __future__ import annotations
 import httpx
 
 from bx_scholar_core.clients.arxiv import ArXivClient
-from bx_scholar_core.logging import setup_logging
-
-setup_logging(level="WARNING")
 
 SAMPLE_XML = """<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom" xmlns:arxiv="http://arxiv.org/schemas/atom">

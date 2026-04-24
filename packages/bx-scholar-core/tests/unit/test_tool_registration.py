@@ -7,11 +7,8 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
 from bx_scholar_core.config import Settings
-from bx_scholar_core.logging import setup_logging
 from bx_scholar_core.rankings.service import RankingService
 from bx_scholar_core.tools.registry import register_all_tools
-
-setup_logging(level="WARNING")
 
 
 def _make_settings() -> Settings:

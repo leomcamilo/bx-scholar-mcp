@@ -5,9 +5,6 @@ from __future__ import annotations
 import httpx
 
 from bx_scholar_core.clients.crossref import CrossRefClient, _parse_item
-from bx_scholar_core.logging import setup_logging
-
-setup_logging(level="WARNING")
 
 SAMPLE_ITEM = {
     "DOI": "10.1234/test",

@@ -5,10 +5,6 @@ from __future__ import annotations
 import httpx
 
 from bx_scholar_core.clients.openalex import OpenAlexClient, _parse_work, _reconstruct_abstract
-from bx_scholar_core.logging import setup_logging
-
-setup_logging(level="WARNING")
-
 
 SAMPLE_WORK = {
     "id": "https://openalex.org/W12345",
