@@ -4,19 +4,17 @@ BX-Scholar MCP Server — Academic Research Tools
 OpenAlex, CrossRef, ArXiv, Tavily + SJR/Qualis Rankings + Citation Verification + Bibliometrics
 """
 
-import os
-import sys
 import asyncio
 import json
-import time
+import os
 import shutil
+import sys
+import time
 from pathlib import Path
-from typing import Optional, Literal
-from datetime import datetime
+from typing import Literal
 
 import httpx
 import pandas as pd
-from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 
@@ -36,29 +34,38 @@ ARXIV_BASE = "https://export.arxiv.org/api/query"
 _last_arxiv_call = 0.0
 
 # --- Data Indexes (loaded at startup) ---
-_sjr_index: dict = {}      # ISSN -> {title, sjr, quartile, h_index, country, area}
-_qualis_index: dict = {}   # ISSN -> {title, qualis, area}
-_sjr_by_name: dict = {}    # lowercase title -> ISSN
-_jql_index: dict = {}      # ISSN -> {title, abs, abdc, cnrs, fnege, vhb}
-_jql_by_name: dict = {}    # lowercase title -> ISSN
+_sjr_index: dict = {}  # ISSN -> {title, sjr, quartile, h_index, country, area}
+_qualis_index: dict = {}  # ISSN -> {title, qualis, area}
+_sjr_by_name: dict = {}  # lowercase title -> ISSN
+_jql_index: dict = {}  # ISSN -> {title, abs, abdc, cnrs, fnege, vhb}
+_jql_by_name: dict = {}  # lowercase title -> ISSN
 
 
 async def _download_sjr():
     """Download SJR rankings CSV from scimagojr.com"""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     sjr_path = DATA_DIR / "sjr_rankings.csv"
-    print(f"[INFO] Downloading SJR rankings...", file=sys.stderr)
+    print("[INFO] Downloading SJR rankings...", file=sys.stderr)
     async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
-        resp = await client.get(RANKINGS_URL_SJR, headers={
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        })
+        resp = await client.get(
+            RANKINGS_URL_SJR,
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
+        )
         if resp.status_code == 200:
             sjr_path.write_bytes(resp.content)
-            print(f"[INFO] SJR downloaded: {len(resp.content)/(1024*1024):.1f}MB", file=sys.stderr)
+            print(
+                f"[INFO] SJR downloaded: {len(resp.content) / (1024 * 1024):.1f}MB", file=sys.stderr
+            )
             return True
         else:
-            print(f"[WARN] SJR download failed (HTTP {resp.status_code}). scimagojr.com may block automated downloads.", file=sys.stderr)
-            print(f"[WARN] Download manually from https://www.scimagojr.com/journalrank.php and save as {sjr_path}", file=sys.stderr)
+            print(
+                f"[WARN] SJR download failed (HTTP {resp.status_code}). scimagojr.com may block automated downloads.",
+                file=sys.stderr,
+            )
+            print(
+                f"[WARN] Download manually from https://www.scimagojr.com/journalrank.php and save as {sjr_path}",
+                file=sys.stderr,
+            )
             return False
 
 
@@ -66,9 +73,12 @@ def _load_sjr():
     global _sjr_index, _sjr_by_name
     sjr_path = DATA_DIR / "sjr_rankings.csv"
     if not sjr_path.exists():
-        print(f"[WARN] SJR file not found. Download from https://www.scimagojr.com/journalrank.php", file=sys.stderr)
+        print(
+            "[WARN] SJR file not found. Download from https://www.scimagojr.com/journalrank.php",
+            file=sys.stderr,
+        )
         print(f"[WARN] Save as: {sjr_path}", file=sys.stderr)
-        print(f"[WARN] Or run the update_rankings tool after server starts.", file=sys.stderr)
+        print("[WARN] Or run the update_rankings tool after server starts.", file=sys.stderr)
         return
     try:
         df = pd.read_csv(sjr_path, sep=";", on_bad_lines="warn")
@@ -115,10 +125,17 @@ def _load_qualis():
                 issn_col = c
                 break
         if not issn_col:
-            print(f"[WARN] No ISSN column found in Qualis. Columns: {list(df.columns)}", file=sys.stderr)
+            print(
+                f"[WARN] No ISSN column found in Qualis. Columns: {list(df.columns)}",
+                file=sys.stderr,
+            )
             return
-        title_col = next((c for c in df.columns if "tulo" in c.lower() or "title" in c.lower()), None)
-        qualis_col = next((c for c in df.columns if "estrato" in c.lower() or "qualis" in c.lower()), None)
+        title_col = next(
+            (c for c in df.columns if "tulo" in c.lower() or "title" in c.lower()), None
+        )
+        qualis_col = next(
+            (c for c in df.columns if "estrato" in c.lower() or "qualis" in c.lower()), None
+        )
         area_col = next((c for c in df.columns if "rea" in c.lower() and "a" in c.lower()), None)
 
         for _, row in df.iterrows():
@@ -144,10 +161,14 @@ def _load_jql():
     global _jql_index, _jql_by_name
     jql_path = DATA_DIR / "jql_rankings.csv"
     if not jql_path.exists():
-        print(f"[WARN] JQL file not found at {jql_path}. Download from harzing.com or use parse_jql.py", file=sys.stderr)
+        print(
+            f"[WARN] JQL file not found at {jql_path}. Download from harzing.com or use parse_jql.py",
+            file=sys.stderr,
+        )
         return
     try:
         import csv
+
         with open(jql_path, encoding="utf-8") as f:
             reader = csv.DictReader(f)
             for row in reader:
@@ -204,7 +225,9 @@ def _format_openalex_work(work: dict) -> dict:
         "issn": (source.get("issn_l") or ""),
         "type": work.get("type", ""),
         "is_open_access": (work.get("open_access") or {}).get("is_oa", False),
-        "source_type": "peer_reviewed" if work.get("type") == "article" else work.get("type", "unknown"),
+        "source_type": "peer_reviewed"
+        if work.get("type") == "article"
+        else work.get("type", "unknown"),
     }
 
 
@@ -215,6 +238,7 @@ mcp = FastMCP("bx-scholar")
 # ============================================================
 # MCP PROMPTS — Research Workflow Templates (8 prompts)
 # ============================================================
+
 
 @mcp.prompt()
 def research_pipeline() -> str:
@@ -917,13 +941,14 @@ For EACH included study:
 # GROUP 1: Literature Search (4 tools)
 # ============================================================
 
+
 @mcp.tool()
 async def search_openalex(
     query: str,
-    year_from: Optional[int] = None,
-    year_to: Optional[int] = None,
-    journal_issn: Optional[str] = None,
-    type_filter: Optional[str] = None,
+    year_from: int | None = None,
+    year_to: int | None = None,
+    journal_issn: str | None = None,
+    type_filter: str | None = None,
     sort: str = "cited_by_count:desc",
     per_page: int = 25,
 ) -> str:
@@ -954,15 +979,19 @@ async def search_openalex(
 
     results = [_format_openalex_work(w) for w in data.get("results", [])]
     total = data.get("meta", {}).get("count", 0)
-    return json.dumps({"total_results": total, "returned": len(results), "results": results}, ensure_ascii=False, indent=2)
+    return json.dumps(
+        {"total_results": total, "returned": len(results), "results": results},
+        ensure_ascii=False,
+        indent=2,
+    )
 
 
 @mcp.tool()
 async def search_crossref(
     query: str,
-    year_from: Optional[int] = None,
-    year_to: Optional[int] = None,
-    journal_name: Optional[str] = None,
+    year_from: int | None = None,
+    year_to: int | None = None,
+    journal_name: str | None = None,
     sort: str = "is-referenced-by-count",
     rows: int = 25,
 ) -> str:
@@ -992,19 +1021,32 @@ async def search_crossref(
     items = data.get("message", {}).get("items", [])
     results = []
     for item in items:
-        results.append({
-            "title": (item.get("title") or [""])[0],
-            "doi": item.get("DOI", ""),
-            "year": (item.get("published-print") or item.get("published-online") or {}).get("date-parts", [[None]])[0][0],
-            "authors": [f"{a.get('given', '')} {a.get('family', '')}" for a in (item.get("author") or [])[:10]],
-            "cited_by_count": item.get("is-referenced-by-count", 0),
-            "journal": (item.get("container-title") or [""])[0],
-            "issn": (item.get("ISSN") or [""])[0],
-            "type": item.get("type", ""),
-            "source_type": "peer_reviewed" if item.get("type") == "journal-article" else item.get("type", "unknown"),
-        })
+        results.append(
+            {
+                "title": (item.get("title") or [""])[0],
+                "doi": item.get("DOI", ""),
+                "year": (item.get("published-print") or item.get("published-online") or {}).get(
+                    "date-parts", [[None]]
+                )[0][0],
+                "authors": [
+                    f"{a.get('given', '')} {a.get('family', '')}"
+                    for a in (item.get("author") or [])[:10]
+                ],
+                "cited_by_count": item.get("is-referenced-by-count", 0),
+                "journal": (item.get("container-title") or [""])[0],
+                "issn": (item.get("ISSN") or [""])[0],
+                "type": item.get("type", ""),
+                "source_type": "peer_reviewed"
+                if item.get("type") == "journal-article"
+                else item.get("type", "unknown"),
+            }
+        )
     total = data.get("message", {}).get("total-results", 0)
-    return json.dumps({"total_results": total, "returned": len(results), "results": results}, ensure_ascii=False, indent=2)
+    return json.dumps(
+        {"total_results": total, "returned": len(results), "results": results},
+        ensure_ascii=False,
+        indent=2,
+    )
 
 
 @mcp.tool()
@@ -1037,6 +1079,7 @@ async def search_arxiv(
 
     # Parse XML
     import xml.etree.ElementTree as ET
+
     ns = {"atom": "http://www.w3.org/2005/Atom", "arxiv": "http://arxiv.org/schemas/atom"}
     root = ET.fromstring(resp.text)
     results = []
@@ -1050,30 +1093,40 @@ async def search_arxiv(
         if not categories:
             categories = [c.get("term", "") for c in entry.findall("atom:category", ns)]
 
-        results.append({
-            "title": title,
-            "arxiv_id": arxiv_id,
-            "doi": "",
-            "year": int(published[:4]) if published else None,
-            "authors": authors[:10],
-            "abstract": summary[:500],
-            "categories": categories[:5],
-            "published": published,
-            "url": f"https://arxiv.org/abs/{arxiv_id}",
-            "source_type": "grey_literature",
-            "warning": "PREPRINT - NÃO peer-reviewed. Usar apenas como fonte suplementar.",
-        })
-    return json.dumps({"total_results": len(results), "results": results, "source_warning": "ArXiv é literatura cinzenta. Todos os resultados são preprints não revisados por pares."}, ensure_ascii=False, indent=2)
+        results.append(
+            {
+                "title": title,
+                "arxiv_id": arxiv_id,
+                "doi": "",
+                "year": int(published[:4]) if published else None,
+                "authors": authors[:10],
+                "abstract": summary[:500],
+                "categories": categories[:5],
+                "published": published,
+                "url": f"https://arxiv.org/abs/{arxiv_id}",
+                "source_type": "grey_literature",
+                "warning": "PREPRINT - NÃO peer-reviewed. Usar apenas como fonte suplementar.",
+            }
+        )
+    return json.dumps(
+        {
+            "total_results": len(results),
+            "results": results,
+            "source_warning": "ArXiv é literatura cinzenta. Todos os resultados são preprints não revisados por pares.",
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
 
 
 @mcp.tool()
 async def search_tavily(
     query: str,
     search_depth: str = "basic",
-    include_domains: Optional[str] = None,
+    include_domains: str | None = None,
     max_results: int = 10,
 ) -> str:
-    """Web search via Tavily for academic content, reports, policy documents. 
+    """Web search via Tavily for academic content, reports, policy documents.
     include_domains: comma-separated domains (e.g. 'scholar.google.com,researchgate.net')"""
     if not TAVILY_API_KEY:
         return json.dumps({"error": "TAVILY_API_KEY not configured in .env"})
@@ -1092,19 +1145,23 @@ async def search_tavily(
         resp.raise_for_status()
         data = resp.json()
 
-    results = [{
-        "title": r.get("title", ""),
-        "url": r.get("url", ""),
-        "content": r.get("content", "")[:300],
-        "score": r.get("score", 0),
-        "source_type": "web_search",
-    } for r in data.get("results", [])]
+    results = [
+        {
+            "title": r.get("title", ""),
+            "url": r.get("url", ""),
+            "content": r.get("content", "")[:300],
+            "score": r.get("score", 0),
+            "source_type": "web_search",
+        }
+        for r in data.get("results", [])
+    ]
     return json.dumps({"results": results}, ensure_ascii=False, indent=2)
 
 
 # ============================================================
 # GROUP 2: Paper Metadata (4 tools)
 # ============================================================
+
 
 @mcp.tool()
 async def get_paper_by_doi(doi: str) -> str:
@@ -1113,13 +1170,20 @@ async def get_paper_by_doi(doi: str) -> str:
     # Try OpenAlex
     async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
         try:
-            resp = await client.get(f"{OPENALEX_BASE}/works/https://doi.org/{doi}", params={"mailto": POLITE_EMAIL})
+            resp = await client.get(
+                f"{OPENALEX_BASE}/works/https://doi.org/{doi}", params={"mailto": POLITE_EMAIL}
+            )
             if resp.status_code == 200:
                 work = resp.json()
                 result = _format_openalex_work(work)
-                result["references"] = [r.replace("https://openalex.org/", "") for r in (work.get("referenced_works") or [])[:50]]
+                result["references"] = [
+                    r.replace("https://openalex.org/", "")
+                    for r in (work.get("referenced_works") or [])[:50]
+                ]
                 result["cited_by_api_url"] = work.get("cited_by_api_url", "")
-                return json.dumps({"source": "openalex", "paper": result}, ensure_ascii=False, indent=2)
+                return json.dumps(
+                    {"source": "openalex", "paper": result}, ensure_ascii=False, indent=2
+                )
         except Exception:
             pass
         # Fallback CrossRef
@@ -1130,8 +1194,13 @@ async def get_paper_by_doi(doi: str) -> str:
             result = {
                 "title": (item.get("title") or [""])[0],
                 "doi": item.get("DOI", ""),
-                "year": (item.get("published-print") or item.get("published-online") or {}).get("date-parts", [[None]])[0][0],
-                "authors": [f"{a.get('given', '')} {a.get('family', '')}" for a in (item.get("author") or [])[:10]],
+                "year": (item.get("published-print") or item.get("published-online") or {}).get(
+                    "date-parts", [[None]]
+                )[0][0],
+                "authors": [
+                    f"{a.get('given', '')} {a.get('family', '')}"
+                    for a in (item.get("author") or [])[:10]
+                ],
                 "cited_by_count": item.get("is-referenced-by-count", 0),
                 "journal": (item.get("container-title") or [""])[0],
                 "issn": (item.get("ISSN") or [""])[0],
@@ -1151,7 +1220,10 @@ async def get_paper_citations(
     doi = doi.strip().replace("https://doi.org/", "")
     async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
         # First get the OpenAlex ID for this DOI
-        resp_meta = await client.get(f"{OPENALEX_BASE}/works/https://doi.org/{doi}", params={"mailto": POLITE_EMAIL, "select": "id,referenced_works,cited_by_api_url"})
+        resp_meta = await client.get(
+            f"{OPENALEX_BASE}/works/https://doi.org/{doi}",
+            params={"mailto": POLITE_EMAIL, "select": "id,referenced_works,cited_by_api_url"},
+        )
         if resp_meta.status_code != 200:
             return json.dumps({"error": f"Paper not found: {doi}"})
         work_meta = resp_meta.json()
@@ -1161,21 +1233,44 @@ async def get_paper_citations(
             # Use the cited_by_api_url or cites filter with OpenAlex ID
             cited_by_url = work_meta.get("cited_by_api_url", "")
             if cited_by_url:
-                resp = await client.get(cited_by_url, params={"per_page": min(per_page, 50), "sort": "cited_by_count:desc", "mailto": POLITE_EMAIL})
+                resp = await client.get(
+                    cited_by_url,
+                    params={
+                        "per_page": min(per_page, 50),
+                        "sort": "cited_by_count:desc",
+                        "mailto": POLITE_EMAIL,
+                    },
+                )
             else:
-                params = {"filter": f"cites:{openalex_id}", "per_page": min(per_page, 50), "sort": "cited_by_count:desc", "mailto": POLITE_EMAIL}
+                params = {
+                    "filter": f"cites:{openalex_id}",
+                    "per_page": min(per_page, 50),
+                    "sort": "cited_by_count:desc",
+                    "mailto": POLITE_EMAIL,
+                }
                 resp = await client.get(f"{OPENALEX_BASE}/works", params=params)
         else:
             ref_ids = (work_meta.get("referenced_works") or [])[:per_page]
             if not ref_ids:
                 return json.dumps({"direction": direction, "count": 0, "results": []})
             pipe = "|".join(ref_ids)
-            resp = await client.get(f"{OPENALEX_BASE}/works", params={"filter": f"openalex_id:{pipe}", "per_page": min(per_page, 50), "mailto": POLITE_EMAIL})
+            resp = await client.get(
+                f"{OPENALEX_BASE}/works",
+                params={
+                    "filter": f"openalex_id:{pipe}",
+                    "per_page": min(per_page, 50),
+                    "mailto": POLITE_EMAIL,
+                },
+            )
 
         resp.raise_for_status()
         data = resp.json()
         results = [_format_openalex_work(w) for w in data.get("results", [])]
-        return json.dumps({"direction": direction, "doi": doi, "count": len(results), "results": results}, ensure_ascii=False, indent=2)
+        return json.dumps(
+            {"direction": direction, "doi": doi, "count": len(results), "results": results},
+            ensure_ascii=False,
+            indent=2,
+        )
 
 
 @mcp.tool()
@@ -1186,7 +1281,9 @@ async def get_author_works(
     """Get all works by an author, sorted by citation count. Useful for finding key researchers in a field."""
     async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
         # Search author
-        resp = await client.get(f"{OPENALEX_BASE}/authors", params={"search": author_name, "mailto": POLITE_EMAIL})
+        resp = await client.get(
+            f"{OPENALEX_BASE}/authors", params={"search": author_name, "mailto": POLITE_EMAIL}
+        )
         resp.raise_for_status()
         authors = resp.json().get("results", [])
         if not authors:
@@ -1194,18 +1291,31 @@ async def get_author_works(
         author = authors[0]
         author_id = author["id"]
         # Get works
-        resp = await client.get(f"{OPENALEX_BASE}/works", params={
-            "filter": f"author.id:{author_id}",
-            "sort": "cited_by_count:desc",
-            "per_page": min(per_page, 50),
-            "mailto": POLITE_EMAIL,
-        })
+        resp = await client.get(
+            f"{OPENALEX_BASE}/works",
+            params={
+                "filter": f"author.id:{author_id}",
+                "sort": "cited_by_count:desc",
+                "per_page": min(per_page, 50),
+                "mailto": POLITE_EMAIL,
+            },
+        )
         resp.raise_for_status()
         works = [_format_openalex_work(w) for w in resp.json().get("results", [])]
-        return json.dumps({
-            "author": {"name": author.get("display_name"), "id": author_id, "works_count": author.get("works_count"), "cited_by_count": author.get("cited_by_count"), "h_index": (author.get("summary_stats") or {}).get("h_index")},
-            "works": works,
-        }, ensure_ascii=False, indent=2)
+        return json.dumps(
+            {
+                "author": {
+                    "name": author.get("display_name"),
+                    "id": author_id,
+                    "works_count": author.get("works_count"),
+                    "cited_by_count": author.get("cited_by_count"),
+                    "h_index": (author.get("summary_stats") or {}).get("h_index"),
+                },
+                "works": works,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
 
 
 @mcp.tool()
@@ -1231,14 +1341,16 @@ async def get_journal_info(issn_or_name: str) -> str:
             "cited_by_count": src.get("cited_by_count"),
             "h_index": (src.get("summary_stats") or {}).get("h_index"),
             "type": src.get("type", ""),
-            "publisher": (src.get("host_organization_lineage_names") or [""])[0] if src.get("host_organization_lineage_names") else "",
+            "publisher": (src.get("host_organization_lineage_names") or [""])[0]
+            if src.get("host_organization_lineage_names")
+            else "",
             "subjects": [c.get("display_name", "") for c in (src.get("x_concepts") or [])[:5]],
             "is_open_access": src.get("is_oa", False),
         }
         # Add SJR ranking
         sjr_info = _sjr_index.get(issn_l, {})
         if not sjr_info:
-            for issn in (src.get("issn") or []):
+            for issn in src.get("issn") or []:
                 sjr_info = _sjr_index.get(issn, {})
                 if sjr_info:
                     break
@@ -1247,7 +1359,7 @@ async def get_journal_info(issn_or_name: str) -> str:
         # Add Qualis ranking
         qualis_info = _qualis_index.get(issn_l, {})
         if not qualis_info:
-            for issn in (src.get("issn") or []):
+            for issn in src.get("issn") or []:
                 qualis_info = _qualis_index.get(issn, {})
                 if qualis_info:
                     break
@@ -1256,7 +1368,7 @@ async def get_journal_info(issn_or_name: str) -> str:
         # Add JQL rankings
         jql_info = _jql_index.get(issn_l, {})
         if not jql_info:
-            for issn in (src.get("issn") or []):
+            for issn in src.get("issn") or []:
                 jql_info = _jql_index.get(issn, {})
                 if jql_info:
                     break
@@ -1271,6 +1383,7 @@ async def get_journal_info(issn_or_name: str) -> str:
 # ============================================================
 # GROUP 3: Journal Rankings (3 tools)
 # ============================================================
+
 
 @mcp.tool()
 async def lookup_journal_ranking(issn_or_name: str) -> str:
@@ -1310,31 +1423,40 @@ async def lookup_journal_ranking(issn_or_name: str) -> str:
             jql_info = _jql_index.get(found_jql_issn, {})
 
     if not sjr_info and not qualis_info and not jql_info:
-        return json.dumps({"error": f"Journal not found in local rankings: {issn_or_name}", "suggestion": "Try using get_journal_info for OpenAlex lookup"})
+        return json.dumps(
+            {
+                "error": f"Journal not found in local rankings: {issn_or_name}",
+                "suggestion": "Try using get_journal_info for OpenAlex lookup",
+            }
+        )
 
-    return json.dumps({
-        "query": issn_or_name,
-        "sjr": {
-            "title": sjr_info.get("title", "N/A"),
-            "sjr_score": sjr_info.get("sjr", "N/A"),
-            "quartile": sjr_info.get("sjr_quartile", "N/A"),
-            "h_index": sjr_info.get("h_index", "N/A"),
-            "area": sjr_info.get("area", "N/A"),
+    return json.dumps(
+        {
+            "query": issn_or_name,
+            "sjr": {
+                "title": sjr_info.get("title", "N/A"),
+                "sjr_score": sjr_info.get("sjr", "N/A"),
+                "quartile": sjr_info.get("sjr_quartile", "N/A"),
+                "h_index": sjr_info.get("h_index", "N/A"),
+                "area": sjr_info.get("area", "N/A"),
+            },
+            "qualis": {
+                "title": qualis_info.get("title", "N/A"),
+                "classification": qualis_info.get("qualis", "N/A"),
+                "area": qualis_info.get("area", "N/A"),
+            },
+            "jql": {
+                "title": jql_info.get("title", "N/A"),
+                "abs": jql_info.get("abs", "N/A"),
+                "abdc": jql_info.get("abdc", "N/A"),
+                "cnrs": jql_info.get("cnrs", "N/A"),
+                "fnege": jql_info.get("fnege", "N/A"),
+                "vhb": jql_info.get("vhb", "N/A"),
+            },
         },
-        "qualis": {
-            "title": qualis_info.get("title", "N/A"),
-            "classification": qualis_info.get("qualis", "N/A"),
-            "area": qualis_info.get("area", "N/A"),
-        },
-        "jql": {
-            "title": jql_info.get("title", "N/A"),
-            "abs": jql_info.get("abs", "N/A"),
-            "abdc": jql_info.get("abdc", "N/A"),
-            "cnrs": jql_info.get("cnrs", "N/A"),
-            "fnege": jql_info.get("fnege", "N/A"),
-            "vhb": jql_info.get("vhb", "N/A"),
-        },
-    }, ensure_ascii=False, indent=2)
+        ensure_ascii=False,
+        indent=2,
+    )
 
 
 @mcp.tool()
@@ -1353,27 +1475,31 @@ async def get_top_journals_for_field(
                 sjr_val = float(str(info.get("sjr", "0")).replace(",", "."))
             except (ValueError, TypeError):
                 sjr_val = 0
-            matches.append({
-                "title": info.get("title"),
-                "issn": issn,
-                "sjr": info.get("sjr"),
-                "quartile": info.get("sjr_quartile"),
-                "h_index": info.get("h_index"),
-                "qualis": _qualis_index.get(issn, {}).get("qualis", "N/A"),
-                "_sjr_num": sjr_val,
-            })
+            matches.append(
+                {
+                    "title": info.get("title"),
+                    "issn": issn,
+                    "sjr": info.get("sjr"),
+                    "quartile": info.get("sjr_quartile"),
+                    "h_index": info.get("h_index"),
+                    "qualis": _qualis_index.get(issn, {}).get("qualis", "N/A"),
+                    "_sjr_num": sjr_val,
+                }
+            )
     matches.sort(key=lambda x: x["_sjr_num"], reverse=True)
     for m in matches:
         del m["_sjr_num"]
-    return json.dumps({"field": field, "top_journals": matches[:limit]}, ensure_ascii=False, indent=2)
+    return json.dumps(
+        {"field": field, "top_journals": matches[:limit]}, ensure_ascii=False, indent=2
+    )
 
 
 @mcp.tool()
 async def get_journal_papers(
     issn: str,
-    query: Optional[str] = None,
-    year_from: Optional[int] = None,
-    year_to: Optional[int] = None,
+    query: str | None = None,
+    year_from: int | None = None,
+    year_to: int | None = None,
     per_page: int = 25,
 ) -> str:
     """Search for papers within a SPECIFIC journal by ISSN. Essential for finding papers from the target journal."""
@@ -1399,12 +1525,22 @@ async def get_journal_papers(
 
     results = [_format_openalex_work(w) for w in data.get("results", [])]
     total = data.get("meta", {}).get("count", 0)
-    return json.dumps({"journal_issn": issn, "total_results": total, "returned": len(results), "results": results}, ensure_ascii=False, indent=2)
+    return json.dumps(
+        {
+            "journal_issn": issn,
+            "total_results": total,
+            "returned": len(results),
+            "results": results,
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
 
 
 # ============================================================
 # GROUP 4: Bibliometrics (3 tools)
 # ============================================================
+
 
 @mcp.tool()
 async def build_citation_network(
@@ -1427,7 +1563,9 @@ async def build_citation_network(
             if doi in nodes:
                 continue
             try:
-                resp = await client.get(f"{OPENALEX_BASE}/works/https://doi.org/{doi}", params={"mailto": POLITE_EMAIL})
+                resp = await client.get(
+                    f"{OPENALEX_BASE}/works/https://doi.org/{doi}", params={"mailto": POLITE_EMAIL}
+                )
                 if resp.status_code != 200:
                     continue
                 work = resp.json()
@@ -1439,10 +1577,14 @@ async def build_citation_network(
                     for ref_id in refs:
                         # Get DOI for referenced work
                         try:
-                            ref_resp = await client.get(f"{OPENALEX_BASE}/works/{ref_id}", params={"mailto": POLITE_EMAIL})
+                            ref_resp = await client.get(
+                                f"{OPENALEX_BASE}/works/{ref_id}", params={"mailto": POLITE_EMAIL}
+                            )
                             if ref_resp.status_code == 200:
                                 ref_work = ref_resp.json()
-                                ref_doi = (ref_work.get("doi") or "").replace("https://doi.org/", "")
+                                ref_doi = (ref_work.get("doi") or "").replace(
+                                    "https://doi.org/", ""
+                                )
                                 if ref_doi:
                                     edges.append({"from": doi, "to": ref_doi, "type": "cites"})
                                     if ref_doi not in nodes and len(nodes) < max_nodes:
@@ -1452,12 +1594,16 @@ async def build_citation_network(
             except Exception:
                 continue
 
-    return json.dumps({
-        "nodes_count": len(nodes),
-        "edges_count": len(edges),
-        "nodes": list(nodes.values()),
-        "edges": edges[:200],
-    }, ensure_ascii=False, indent=2)
+    return json.dumps(
+        {
+            "nodes_count": len(nodes),
+            "edges_count": len(edges),
+            "nodes": list(nodes.values()),
+            "edges": edges[:200],
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
 
 
 @mcp.tool()
@@ -1474,12 +1620,15 @@ async def find_co_citation_clusters(
     async with httpx.AsyncClient(timeout=60.0) as client:
         for doi in doi_list[:20]:  # Limit to 20 to avoid API abuse
             try:
-                resp = await client.get(f"{OPENALEX_BASE}/works", params={
-                    "filter": f"cites:https://doi.org/{doi}",
-                    "per_page": 50,
-                    "select": "id",
-                    "mailto": POLITE_EMAIL,
-                })
+                resp = await client.get(
+                    f"{OPENALEX_BASE}/works",
+                    params={
+                        "filter": f"cites:https://doi.org/{doi}",
+                        "per_page": 50,
+                        "select": "id",
+                        "mailto": POLITE_EMAIL,
+                    },
+                )
                 if resp.status_code == 200:
                     citers = {w["id"] for w in resp.json().get("results", [])}
                     citing_sets[doi] = citers
@@ -1493,13 +1642,17 @@ async def find_co_citation_clusters(
         for j in range(i + 1, len(doi_keys)):
             shared = citing_sets[doi_keys[i]] & citing_sets[doi_keys[j]]
             if len(shared) >= min_co_citations:
-                pairs.append({
-                    "paper_a": doi_keys[i],
-                    "paper_b": doi_keys[j],
-                    "co_citations": len(shared),
-                })
+                pairs.append(
+                    {
+                        "paper_a": doi_keys[i],
+                        "paper_b": doi_keys[j],
+                        "co_citations": len(shared),
+                    }
+                )
     pairs.sort(key=lambda x: x["co_citations"], reverse=True)
-    return json.dumps({"co_citation_pairs": pairs[:50], "total_pairs": len(pairs)}, ensure_ascii=False, indent=2)
+    return json.dumps(
+        {"co_citation_pairs": pairs[:50], "total_pairs": len(pairs)}, ensure_ascii=False, indent=2
+    )
 
 
 @mcp.tool()
@@ -1517,11 +1670,14 @@ async def get_keyword_trends(
             yearly = {}
             for year in range(year_from, year_to + 1):
                 try:
-                    resp = await client.get(f"{OPENALEX_BASE}/works", params={
-                        "filter": f"default.search:{kw},publication_year:{year}",
-                        "per_page": 1,
-                        "mailto": POLITE_EMAIL,
-                    })
+                    resp = await client.get(
+                        f"{OPENALEX_BASE}/works",
+                        params={
+                            "filter": f"default.search:{kw},publication_year:{year}",
+                            "per_page": 1,
+                            "mailto": POLITE_EMAIL,
+                        },
+                    )
                     if resp.status_code == 200:
                         yearly[str(year)] = resp.json().get("meta", {}).get("count", 0)
                 except Exception:
@@ -1535,6 +1691,7 @@ async def get_keyword_trends(
 # GROUP 5: Citation Verification (3 tools)
 # ============================================================
 
+
 @mcp.tool()
 async def verify_citation(
     author: str,
@@ -1545,58 +1702,91 @@ async def verify_citation(
     headers = {"User-Agent": f"BXScholar/1.0 (mailto:{POLITE_EMAIL})"}
     async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
         # Try CrossRef bibliographic search
-        resp = await client.get(f"{CROSSREF_BASE}/works", params={
-            "query.bibliographic": f"{author} {title_fragment}",
-            "filter": f"from-pub-date:{year - 1},until-pub-date:{year + 1}",
-            "rows": 5,
-        }, headers=headers)
+        resp = await client.get(
+            f"{CROSSREF_BASE}/works",
+            params={
+                "query.bibliographic": f"{author} {title_fragment}",
+                "filter": f"from-pub-date:{year - 1},until-pub-date:{year + 1}",
+                "rows": 5,
+            },
+            headers=headers,
+        )
         if resp.status_code != 200:
             return json.dumps({"verified": False, "error": "CrossRef API error"})
 
         items = resp.json().get("message", {}).get("items", [])
         if not items:
             # Fallback to OpenAlex
-            resp2 = await client.get(f"{OPENALEX_BASE}/works", params={
-                "search": f"{author} {title_fragment}",
-                "filter": f"publication_year:{year}",
-                "per_page": 5,
-                "mailto": POLITE_EMAIL,
-            })
+            resp2 = await client.get(
+                f"{OPENALEX_BASE}/works",
+                params={
+                    "search": f"{author} {title_fragment}",
+                    "filter": f"publication_year:{year}",
+                    "per_page": 5,
+                    "mailto": POLITE_EMAIL,
+                },
+            )
             if resp2.status_code == 200:
                 oa_results = resp2.json().get("results", [])
                 if oa_results:
                     best = oa_results[0]
-                    return json.dumps({
-                        "verified": True,
-                        "source": "openalex",
-                        "confidence": "medium",
-                        "match": {
-                            "title": best.get("title", ""),
-                            "doi": (best.get("doi") or "").replace("https://doi.org/", ""),
-                            "year": best.get("publication_year"),
-                            "authors": [a.get("author", {}).get("display_name", "") for a in (best.get("authorships") or [])[:5]],
+                    return json.dumps(
+                        {
+                            "verified": True,
+                            "source": "openalex",
+                            "confidence": "medium",
+                            "match": {
+                                "title": best.get("title", ""),
+                                "doi": (best.get("doi") or "").replace("https://doi.org/", ""),
+                                "year": best.get("publication_year"),
+                                "authors": [
+                                    a.get("author", {}).get("display_name", "")
+                                    for a in (best.get("authorships") or [])[:5]
+                                ],
+                            },
                         },
-                    }, ensure_ascii=False, indent=2)
-            return json.dumps({"verified": False, "query": {"author": author, "year": year, "title": title_fragment}, "message": "No match found in CrossRef or OpenAlex. This citation may be fabricated."})
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+            return json.dumps(
+                {
+                    "verified": False,
+                    "query": {"author": author, "year": year, "title": title_fragment},
+                    "message": "No match found in CrossRef or OpenAlex. This citation may be fabricated.",
+                }
+            )
 
         best = items[0]
         # Check if match is plausible
         best_title = (best.get("title") or [""])[0].lower()
         query_title = title_fragment.lower()
-        title_match = query_title in best_title or best_title in query_title or len(set(query_title.split()) & set(best_title.split())) > 2
+        title_match = (
+            query_title in best_title
+            or best_title in query_title
+            or len(set(query_title.split()) & set(best_title.split())) > 2
+        )
 
-        return json.dumps({
-            "verified": title_match,
-            "source": "crossref",
-            "confidence": "high" if title_match else "low",
-            "match": {
-                "title": (best.get("title") or [""])[0],
-                "doi": best.get("DOI", ""),
-                "year": (best.get("published-print") or best.get("published-online") or {}).get("date-parts", [[None]])[0][0],
-                "authors": [f"{a.get('given', '')} {a.get('family', '')}" for a in (best.get("author") or [])[:5]],
-                "journal": (best.get("container-title") or [""])[0],
+        return json.dumps(
+            {
+                "verified": title_match,
+                "source": "crossref",
+                "confidence": "high" if title_match else "low",
+                "match": {
+                    "title": (best.get("title") or [""])[0],
+                    "doi": best.get("DOI", ""),
+                    "year": (best.get("published-print") or best.get("published-online") or {}).get(
+                        "date-parts", [[None]]
+                    )[0][0],
+                    "authors": [
+                        f"{a.get('given', '')} {a.get('family', '')}"
+                        for a in (best.get("author") or [])[:5]
+                    ],
+                    "journal": (best.get("container-title") or [""])[0],
+                },
             },
-        }, ensure_ascii=False, indent=2)
+            ensure_ascii=False,
+            indent=2,
+        )
 
 
 @mcp.tool()
@@ -1607,20 +1797,28 @@ async def check_retraction(doi: str) -> str:
     async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
         resp = await client.get(f"{CROSSREF_BASE}/works/{doi}", headers=headers)
         if resp.status_code != 200:
-            return json.dumps({"doi": doi, "retracted": "unknown", "error": "Could not fetch from CrossRef"})
+            return json.dumps(
+                {"doi": doi, "retracted": "unknown", "error": "Could not fetch from CrossRef"}
+            )
         item = resp.json().get("message", {})
         # Check for retraction
         updates = item.get("update-to") or []
         retracted = any(u.get("type") == "retraction" for u in updates)
         # Also check if this IS a retraction notice
         is_retraction_notice = item.get("type") == "retraction"
-        return json.dumps({
-            "doi": doi,
-            "retracted": retracted,
-            "is_retraction_notice": is_retraction_notice,
-            "updates": [{"type": u.get("type"), "doi": u.get("DOI")} for u in updates] if updates else [],
-            "title": (item.get("title") or [""])[0],
-        }, ensure_ascii=False, indent=2)
+        return json.dumps(
+            {
+                "doi": doi,
+                "retracted": retracted,
+                "is_retraction_notice": is_retraction_notice,
+                "updates": [{"type": u.get("type"), "doi": u.get("DOI")} for u in updates]
+                if updates
+                else [],
+                "title": (item.get("title") or [""])[0],
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
 
 
 @mcp.tool()
@@ -1632,7 +1830,9 @@ async def batch_verify_references(
     try:
         refs = json.loads(references_json)
     except json.JSONDecodeError:
-        return json.dumps({"error": "Invalid JSON input. Expected array of {author, year, title} objects."})
+        return json.dumps(
+            {"error": "Invalid JSON input. Expected array of {author, year, title} objects."}
+        )
 
     results = []
     headers = {"User-Agent": f"BXScholar/1.0 (mailto:{POLITE_EMAIL})"}
@@ -1642,46 +1842,63 @@ async def batch_verify_references(
             year = ref.get("year", 2000)
             title = ref.get("title", "")
             try:
-                resp = await client.get(f"{CROSSREF_BASE}/works", params={
-                    "query.bibliographic": f"{author} {title}",
-                    "filter": f"from-pub-date:{year - 1},until-pub-date:{year + 1}",
-                    "rows": 1,
-                }, headers=headers)
+                resp = await client.get(
+                    f"{CROSSREF_BASE}/works",
+                    params={
+                        "query.bibliographic": f"{author} {title}",
+                        "filter": f"from-pub-date:{year - 1},until-pub-date:{year + 1}",
+                        "rows": 1,
+                    },
+                    headers=headers,
+                )
                 if resp.status_code == 200:
                     items = resp.json().get("message", {}).get("items", [])
                     if items:
                         best = items[0]
                         best_title = (best.get("title") or [""])[0].lower()
                         query_title = title.lower()
-                        matched = query_title in best_title or best_title in query_title or len(set(query_title.split()) & set(best_title.split())) > 2
-                        results.append({
-                            "query": ref,
-                            "verified": matched,
-                            "doi": best.get("DOI", "") if matched else "",
-                            "matched_title": (best.get("title") or [""])[0],
-                        })
+                        matched = (
+                            query_title in best_title
+                            or best_title in query_title
+                            or len(set(query_title.split()) & set(best_title.split())) > 2
+                        )
+                        results.append(
+                            {
+                                "query": ref,
+                                "verified": matched,
+                                "doi": best.get("DOI", "") if matched else "",
+                                "matched_title": (best.get("title") or [""])[0],
+                            }
+                        )
                     else:
-                        results.append({"query": ref, "verified": False, "doi": "", "matched_title": ""})
+                        results.append(
+                            {"query": ref, "verified": False, "doi": "", "matched_title": ""}
+                        )
                 else:
-                    results.append({"query": ref, "verified": False, "error": f"HTTP {resp.status_code}"})
+                    results.append(
+                        {"query": ref, "verified": False, "error": f"HTTP {resp.status_code}"}
+                    )
             except Exception as e:
                 results.append({"query": ref, "verified": False, "error": str(e)})
             await asyncio.sleep(0.1)  # Rate limiting
 
     verified_count = sum(1 for r in results if r.get("verified"))
-    return json.dumps({
-        "total": len(results),
-        "verified": verified_count,
-        "unverified": len(results) - verified_count,
-        "results": results,
-    }, ensure_ascii=False, indent=2)
-
-
+    return json.dumps(
+        {
+            "total": len(results),
+            "verified": verified_count,
+            "unverified": len(results) - verified_count,
+            "results": results,
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
 
 
 # ============================================================
 # GROUP 6: Full-Text Pipeline (3 tools)
 # ============================================================
+
 
 @mcp.tool()
 async def check_open_access(doi: str) -> str:
@@ -1694,7 +1911,9 @@ async def check_open_access(doi: str) -> str:
                 params={"email": POLITE_EMAIL},
             )
             if resp.status_code == 404:
-                return json.dumps({"doi": doi, "oa_status": "not_found", "message": "DOI not found in Unpaywall"})
+                return json.dumps(
+                    {"doi": doi, "oa_status": "not_found", "message": "DOI not found in Unpaywall"}
+                )
             resp.raise_for_status()
             data = resp.json()
 
@@ -1730,23 +1949,30 @@ async def download_pdf(url: str, save_path: str) -> str:
 
     async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
         try:
-            resp = await client.get(url, headers={
-                "User-Agent": f"BX-Scholar/1.0 (mailto:{POLITE_EMAIL})",
-                "Accept": "application/pdf",
-            })
+            resp = await client.get(
+                url,
+                headers={
+                    "User-Agent": f"BX-Scholar/1.0 (mailto:{POLITE_EMAIL})",
+                    "Accept": "application/pdf",
+                },
+            )
             resp.raise_for_status()
 
             content_type = resp.headers.get("content-type", "")
             if "pdf" not in content_type and not save.suffix == ".pdf":
-                return json.dumps({"error": f"Response is not a PDF (content-type: {content_type})", "url": url})
+                return json.dumps(
+                    {"error": f"Response is not a PDF (content-type: {content_type})", "url": url}
+                )
 
             save.write_bytes(resp.content)
             size_mb = len(resp.content) / (1024 * 1024)
-            return json.dumps({
-                "saved_to": str(save),
-                "size_mb": round(size_mb, 2),
-                "url": url,
-            })
+            return json.dumps(
+                {
+                    "saved_to": str(save),
+                    "size_mb": round(size_mb, 2),
+                    "url": url,
+                }
+            )
         except Exception as e:
             return json.dumps({"error": str(e), "url": url})
 
@@ -1767,22 +1993,30 @@ async def extract_pdf_text(pdf_path: str, output_format: str = "markdown") -> st
     # Try marker-pdf first (better quality for academic papers)
     if output_format == "markdown":
         try:
-            from marker.converters.pdf import PdfConverter
             from marker.config.parser import ConfigParser
+            from marker.converters.pdf import PdfConverter
+
             config = ConfigParser({"output_format": "markdown"})
             converter = PdfConverter(config=config)
             result = converter(str(path))
             full_text = result.markdown
-            num_pages = result.metadata.get("pages", 0) if hasattr(result, "metadata") and isinstance(result.metadata, dict) else 0
+            num_pages = (
+                result.metadata.get("pages", 0)
+                if hasattr(result, "metadata") and isinstance(result.metadata, dict)
+                else 0
+            )
             method_used = "marker-pdf"
         except Exception as marker_err:
-            print(f"[WARN] marker-pdf failed: {marker_err}, falling back to pymupdf", file=sys.stderr)
+            print(
+                f"[WARN] marker-pdf failed: {marker_err}, falling back to pymupdf", file=sys.stderr
+            )
             method_used = "pymupdf_fallback"
 
     # Fallback: pymupdf (always used for 'text' format, or if marker fails)
     if not full_text:
         try:
             import fitz
+
             doc = fitz.open(str(path))
             num_pages = len(doc)
             pages = []
@@ -1800,8 +2034,10 @@ async def extract_pdf_text(pdf_path: str, output_format: str = "markdown") -> st
                                 if not text:
                                     continue
                                 max_size = max(s["size"] for s in spans)
-                                is_bold = any(("bold" in s.get("font", "").lower() or
-                                              s.get("flags", 0) & 16) for s in spans)
+                                is_bold = any(
+                                    ("bold" in s.get("font", "").lower() or s.get("flags", 0) & 16)
+                                    for s in spans
+                                )
                                 if max_size > 14 and is_bold:
                                     page_text.append(f"\n## {text}\n")
                                 elif max_size > 12 and is_bold:
@@ -1822,27 +2058,33 @@ async def extract_pdf_text(pdf_path: str, output_format: str = "markdown") -> st
 
     # Truncate if too long
     if len(full_text) > 100000:
-        full_text = full_text[:100000] + "\n\n[... TRUNCATED — full text is too long. Process in chunks.]"
+        full_text = (
+            full_text[:100000] + "\n\n[... TRUNCATED — full text is too long. Process in chunks.]"
+        )
 
-    return json.dumps({
-        "file": str(path),
-        "pages": num_pages,
-        "chars": len(full_text),
-        "format": output_format,
-        "method": method_used,
-        "text": full_text,
-    }, ensure_ascii=False)
+    return json.dumps(
+        {
+            "file": str(path),
+            "pages": num_pages,
+            "chars": len(full_text),
+            "format": output_format,
+            "method": method_used,
+            "text": full_text,
+        },
+        ensure_ascii=False,
+    )
 
 
 # ============================================================
 # GROUP 7: SciELO (1 tool)
 # ============================================================
 
+
 @mcp.tool()
 async def search_scielo(
     query: str,
-    year_from: Optional[int] = None,
-    year_to: Optional[int] = None,
+    year_from: int | None = None,
+    year_to: int | None = None,
     lang: str = "en",
     max_results: int = 20,
 ) -> str:
@@ -1867,7 +2109,9 @@ async def search_scielo(
             )
 
             # Fallback: use OpenAlex with SciELO host filter
-            if resp.status_code != 200 or "application/json" not in resp.headers.get("content-type", ""):
+            if resp.status_code != 200 or "application/json" not in resp.headers.get(
+                "content-type", ""
+            ):
                 # Use OpenAlex filtered to SciELO-hosted journals
                 oa_params = {
                     "search": query,
@@ -1892,37 +2136,53 @@ async def search_scielo(
                     if oa_url:
                         r["pdf_url"] = oa_url
                     results.append(r)
-                return json.dumps({
-                    "query": query,
-                    "source": "openalex_scielo_filter",
-                    "total": data.get("meta", {}).get("count", 0),
-                    "returned": len(results),
-                    "results": results,
-                    "note": "All SciELO papers are Open Access — PDFs available",
-                }, ensure_ascii=False, indent=2)
+                return json.dumps(
+                    {
+                        "query": query,
+                        "source": "openalex_scielo_filter",
+                        "total": data.get("meta", {}).get("count", 0),
+                        "returned": len(results),
+                        "results": results,
+                        "note": "All SciELO papers are Open Access — PDFs available",
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
 
             # Parse direct SciELO response
             data = resp.json()
             results = []
             for doc in data.get("docs", data.get("results", []))[:max_results]:
-                results.append({
-                    "title": doc.get("title", [""])[0] if isinstance(doc.get("title"), list) else doc.get("title", ""),
-                    "authors": doc.get("au", []),
-                    "year": doc.get("year_cluster", [""])[0] if isinstance(doc.get("year_cluster"), list) else doc.get("year_cluster", ""),
-                    "journal": doc.get("journal_title", [""])[0] if isinstance(doc.get("journal_title"), list) else doc.get("journal_title", ""),
-                    "doi": doc.get("doi", ""),
-                    "url": doc.get("id", ""),
-                    "lang": doc.get("la", []),
-                    "source": "scielo",
-                    "full_text_available": True,
-                })
-            return json.dumps({
-                "query": query,
-                "source": "scielo_direct",
-                "returned": len(results),
-                "results": results,
-                "note": "All SciELO papers are Open Access — PDFs available",
-            }, ensure_ascii=False, indent=2)
+                results.append(
+                    {
+                        "title": doc.get("title", [""])[0]
+                        if isinstance(doc.get("title"), list)
+                        else doc.get("title", ""),
+                        "authors": doc.get("au", []),
+                        "year": doc.get("year_cluster", [""])[0]
+                        if isinstance(doc.get("year_cluster"), list)
+                        else doc.get("year_cluster", ""),
+                        "journal": doc.get("journal_title", [""])[0]
+                        if isinstance(doc.get("journal_title"), list)
+                        else doc.get("journal_title", ""),
+                        "doi": doc.get("doi", ""),
+                        "url": doc.get("id", ""),
+                        "lang": doc.get("la", []),
+                        "source": "scielo",
+                        "full_text_available": True,
+                    }
+                )
+            return json.dumps(
+                {
+                    "query": query,
+                    "source": "scielo_direct",
+                    "returned": len(results),
+                    "results": results,
+                    "note": "All SciELO papers are Open Access — PDFs available",
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
         except Exception as e:
             return json.dumps({"error": str(e), "query": query})
 
@@ -1963,7 +2223,7 @@ async def _s2_request(client, url, params, max_retries=3):
         resp = await client.get(url, params=params, headers=_s2_headers())
         if resp.status_code == 429:
             wait = (attempt + 1) * 5
-            print(f"[WARN] S2 429 — retry {attempt+1}/{max_retries} in {wait}s", file=sys.stderr)
+            print(f"[WARN] S2 429 — retry {attempt + 1}/{max_retries} in {wait}s", file=sys.stderr)
             await asyncio.sleep(wait)
             continue
         resp.raise_for_status()
@@ -1974,8 +2234,8 @@ async def _s2_request(client, url, params, max_retries=3):
 @mcp.tool()
 async def search_semantic_scholar(
     query: str,
-    year: Optional[str] = None,
-    fields_of_study: Optional[str] = None,
+    year: str | None = None,
+    fields_of_study: str | None = None,
     limit: int = 20,
 ) -> str:
     """Search Semantic Scholar for papers. Returns TLDR summaries and influential citation counts.
@@ -1994,7 +2254,12 @@ async def search_semantic_scholar(
 
             resp = await _s2_request(client, f"{SEMANTIC_SCHOLAR_BASE}/paper/search", params)
             if resp is None:
-                return json.dumps({"error": "Semantic Scholar rate limited (429). Set S2_API_KEY in .env for higher limits. Get free key: https://www.semanticscholar.org/product/api#api-key-form", "query": query})
+                return json.dumps(
+                    {
+                        "error": "Semantic Scholar rate limited (429). Set S2_API_KEY in .env for higher limits. Get free key: https://www.semanticscholar.org/product/api#api-key-form",
+                        "query": query,
+                    }
+                )
             data = resp.json()
 
             results = []
@@ -2009,7 +2274,9 @@ async def search_semantic_scholar(
                     "authors": authors,
                     "year": paper.get("year"),
                     "venue": paper.get("venue", ""),
-                    "journal": journal.get("name", "") if isinstance(journal, dict) else str(journal),
+                    "journal": journal.get("name", "")
+                    if isinstance(journal, dict)
+                    else str(journal),
                     "doi": ext_ids.get("DOI", ""),
                     "s2_id": paper.get("paperId", ""),
                     "arxiv_id": ext_ids.get("ArXiv", ""),
@@ -2024,12 +2291,16 @@ async def search_semantic_scholar(
                     r["pdf_url"] = oa_pdf.get("url", "")
                 results.append(r)
 
-            return json.dumps({
-                "query": query,
-                "total": data.get("total", 0),
-                "returned": len(results),
-                "results": results,
-            }, ensure_ascii=False, indent=2)
+            return json.dumps(
+                {
+                    "query": query,
+                    "total": data.get("total", 0),
+                    "returned": len(results),
+                    "results": results,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
         except Exception as e:
             return json.dumps({"error": str(e), "query": query})
 
@@ -2039,11 +2310,16 @@ async def get_influential_citations(doi_or_s2id: str, limit: int = 20) -> str:
     """Get influential citations of a paper — citations where the citing paper
     substantially engages with this work (not just incidental mentions).
     Accepts DOI (prefixed with 'DOI:') or Semantic Scholar paper ID."""
-    paper_id = f"DOI:{doi_or_s2id}" if "/" in doi_or_s2id and not doi_or_s2id.startswith("DOI:") else doi_or_s2id
+    paper_id = (
+        f"DOI:{doi_or_s2id}"
+        if "/" in doi_or_s2id and not doi_or_s2id.startswith("DOI:")
+        else doi_or_s2id
+    )
 
     async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
         try:
-            resp = await _s2_request(client,
+            resp = await _s2_request(
+                client,
                 f"{SEMANTIC_SCHOLAR_BASE}/paper/{paper_id}/citations",
                 {
                     "fields": "title,authors,year,venue,citationCount,influentialCitationCount,isInfluential,contexts,intents,externalIds",
@@ -2051,7 +2327,12 @@ async def get_influential_citations(doi_or_s2id: str, limit: int = 20) -> str:
                 },
             )
             if resp is None:
-                return json.dumps({"error": "Semantic Scholar rate limited. Set S2_API_KEY in .env.", "paper": doi_or_s2id})
+                return json.dumps(
+                    {
+                        "error": "Semantic Scholar rate limited. Set S2_API_KEY in .env.",
+                        "paper": doi_or_s2id,
+                    }
+                )
             data = resp.json()
 
             results = []
@@ -2061,25 +2342,31 @@ async def get_influential_citations(doi_or_s2id: str, limit: int = 20) -> str:
                     continue
                 authors = [a.get("name", "") for a in citing.get("authors", [])[:5]]
                 ext_ids = citing.get("externalIds", {})
-                results.append({
-                    "title": citing.get("title", ""),
-                    "authors": authors,
-                    "year": citing.get("year"),
-                    "venue": citing.get("venue", ""),
-                    "doi": ext_ids.get("DOI", ""),
-                    "citation_count": citing.get("citationCount", 0),
-                    "is_influential": item.get("isInfluential", False),
-                    "intents": item.get("intents", []),
-                    "contexts": item.get("contexts", [])[:3],  # Max 3 context snippets
-                })
+                results.append(
+                    {
+                        "title": citing.get("title", ""),
+                        "authors": authors,
+                        "year": citing.get("year"),
+                        "venue": citing.get("venue", ""),
+                        "doi": ext_ids.get("DOI", ""),
+                        "citation_count": citing.get("citationCount", 0),
+                        "is_influential": item.get("isInfluential", False),
+                        "intents": item.get("intents", []),
+                        "contexts": item.get("contexts", [])[:3],  # Max 3 context snippets
+                    }
+                )
 
             influential = [r for r in results if r["is_influential"]]
-            return json.dumps({
-                "paper": doi_or_s2id,
-                "total_citations_returned": len(results),
-                "influential_count": len(influential),
-                "citations": results,
-            }, ensure_ascii=False, indent=2)
+            return json.dumps(
+                {
+                    "paper": doi_or_s2id,
+                    "total_citations_returned": len(results),
+                    "influential_count": len(influential),
+                    "citations": results,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
         except Exception as e:
             return json.dumps({"error": str(e), "paper": doi_or_s2id})
 
@@ -2089,12 +2376,17 @@ async def get_citation_context(citing_doi: str, cited_doi: str) -> str:
     """Get the exact text snippets where one paper cites another.
     Useful for understanding HOW a paper is cited (background, method, result).
     Both parameters accept DOIs."""
-    citing_id = f"DOI:{citing_doi}" if "/" in citing_doi and not citing_doi.startswith("DOI:") else citing_doi
+    citing_id = (
+        f"DOI:{citing_doi}"
+        if "/" in citing_doi and not citing_doi.startswith("DOI:")
+        else citing_doi
+    )
 
     async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
         try:
             # Get all references of the citing paper with contexts
-            resp = await _s2_request(client,
+            resp = await _s2_request(
+                client,
                 f"{SEMANTIC_SCHOLAR_BASE}/paper/{citing_id}/references",
                 {
                     "fields": "title,authors,year,externalIds,contexts,intents,isInfluential",
@@ -2102,7 +2394,12 @@ async def get_citation_context(citing_doi: str, cited_doi: str) -> str:
                 },
             )
             if resp is None:
-                return json.dumps({"error": "Semantic Scholar rate limited. Set S2_API_KEY in .env.", "citing_paper": citing_doi})
+                return json.dumps(
+                    {
+                        "error": "Semantic Scholar rate limited. Set S2_API_KEY in .env.",
+                        "citing_paper": citing_doi,
+                    }
+                )
             data = resp.json()
 
             # Find the cited paper in references
@@ -2112,21 +2409,27 @@ async def get_citation_context(citing_doi: str, cited_doi: str) -> str:
                 ref_ids = ref.get("externalIds", {})
                 ref_doi = (ref_ids.get("DOI") or "").lower()
                 if ref_doi == cited_doi_lower or cited_doi_lower in ref_doi:
-                    return json.dumps({
-                        "citing_paper": citing_doi,
-                        "cited_paper": cited_doi,
-                        "cited_title": ref.get("title", ""),
-                        "is_influential": item.get("isInfluential", False),
-                        "intents": item.get("intents", []),
-                        "contexts": item.get("contexts", []),
-                    }, ensure_ascii=False, indent=2)
+                    return json.dumps(
+                        {
+                            "citing_paper": citing_doi,
+                            "cited_paper": cited_doi,
+                            "cited_title": ref.get("title", ""),
+                            "is_influential": item.get("isInfluential", False),
+                            "intents": item.get("intents", []),
+                            "contexts": item.get("contexts", []),
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                    )
 
-            return json.dumps({
-                "citing_paper": citing_doi,
-                "cited_paper": cited_doi,
-                "found": False,
-                "message": "Cited paper not found in references of citing paper",
-            })
+            return json.dumps(
+                {
+                    "citing_paper": citing_doi,
+                    "cited_paper": cited_doi,
+                    "found": False,
+                    "message": "Cited paper not found in references of citing paper",
+                }
+            )
         except Exception as e:
             return json.dumps({"error": str(e)})
 
@@ -2135,8 +2438,11 @@ async def get_citation_context(citing_doi: str, cited_doi: str) -> str:
 # GROUP 9: Rankings Management (1 tool)
 # ============================================================
 
+
 @mcp.tool()
-async def update_rankings(sjr_url: str = "", qualis_path: str = "", jql_pdf_path: str = "", jql_csv_path: str = "") -> str:
+async def update_rankings(
+    sjr_url: str = "", qualis_path: str = "", jql_pdf_path: str = "", jql_csv_path: str = ""
+) -> str:
     """Update journal rankings data.
     For SJR: downloads from scimagojr.com (may be blocked - provide direct URL if needed).
     For Qualis: provide local path to the XLSX file downloaded from Plataforma Sucupira.
@@ -2153,20 +2459,30 @@ async def update_rankings(sjr_url: str = "", qualis_path: str = "", jql_pdf_path
                 resp = await client.get(sjr_url, headers={"User-Agent": "Mozilla/5.0"})
                 resp.raise_for_status()
                 sjr_path.write_bytes(resp.content)
-                results["sjr"] = f"Downloaded {len(resp.content)/(1024*1024):.1f}MB to {sjr_path}"
+                results["sjr"] = (
+                    f"Downloaded {len(resp.content) / (1024 * 1024):.1f}MB to {sjr_path}"
+                )
         except Exception as e:
-            results["sjr"] = f"Download failed: {e}. Download manually from https://www.scimagojr.com/journalrank.php"
+            results["sjr"] = (
+                f"Download failed: {e}. Download manually from https://www.scimagojr.com/journalrank.php"
+            )
     else:
         # Try default URL
         try:
             async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
-                resp = await client.get("https://www.scimagojr.com/journalrank.php?out=xls",
-                    headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
+                resp = await client.get(
+                    "https://www.scimagojr.com/journalrank.php?out=xls",
+                    headers={
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                    },
+                )
                 if resp.status_code == 200 and len(resp.content) > 1000000:
                     sjr_path.write_bytes(resp.content)
-                    results["sjr"] = f"Downloaded {len(resp.content)/(1024*1024):.1f}MB"
+                    results["sjr"] = f"Downloaded {len(resp.content) / (1024 * 1024):.1f}MB"
                 else:
-                    results["sjr"] = f"Auto-download blocked (HTTP {resp.status_code}). Download manually from https://www.scimagojr.com/journalrank.php and save to {sjr_path}"
+                    results["sjr"] = (
+                        f"Auto-download blocked (HTTP {resp.status_code}). Download manually from https://www.scimagojr.com/journalrank.php and save to {sjr_path}"
+                    )
         except Exception as e:
             results["sjr"] = f"Failed: {e}. Download manually."
 
@@ -2180,7 +2496,9 @@ async def update_rankings(sjr_url: str = "", qualis_path: str = "", jql_pdf_path
         else:
             results["qualis"] = f"File not found: {qualis_path}"
     else:
-        results["qualis"] = "No Qualis file provided. Download from https://sucupira.capes.gov.br and provide the path."
+        results["qualis"] = (
+            "No Qualis file provided. Download from https://sucupira.capes.gov.br and provide the path."
+        )
 
     # Update JQL
     if jql_pdf_path:
@@ -2191,11 +2509,14 @@ async def update_rankings(sjr_url: str = "", qualis_path: str = "", jql_pdf_path
                 scripts_dir = Path(__file__).parent / "scripts"
                 sys.path.insert(0, str(scripts_dir))
                 from parse_jql import parse_jql_pdf
+
                 dest_csv = DATA_DIR / "jql_rankings.csv"
                 entries = parse_jql_pdf(str(jp), str(dest_csv))
                 results["jql"] = f"Parsed {len(entries)} journals from PDF -> {dest_csv}"
             except ImportError:
-                results["jql"] = "parse_jql.py not found in scripts/. Ensure pymupdf is installed: pip install pymupdf"
+                results["jql"] = (
+                    "parse_jql.py not found in scripts/. Ensure pymupdf is installed: pip install pymupdf"
+                )
             except Exception as e:
                 results["jql"] = f"PDF parsing failed: {e}"
         else:
@@ -2209,7 +2530,9 @@ async def update_rankings(sjr_url: str = "", qualis_path: str = "", jql_pdf_path
         else:
             results["jql"] = f"CSV file not found: {jql_csv_path}"
     else:
-        results["jql"] = "No JQL file provided. Provide jql_pdf_path (ISSN PDF from harzing.com) or jql_csv_path (pre-parsed CSV)."
+        results["jql"] = (
+            "No JQL file provided. Provide jql_pdf_path (ISSN PDF from harzing.com) or jql_csv_path (pre-parsed CSV)."
+        )
 
     results["note"] = "Restart the MCP server to reload updated rankings."
     return json.dumps(results, ensure_ascii=False, indent=2)
@@ -2222,6 +2545,7 @@ async def update_rankings(sjr_url: str = "", qualis_path: str = "", jql_pdf_path
 # readable document. Agents can read these to learn workflows,
 # protocols, and best practices for academic research.
 # ============================================================
+
 
 @mcp.resource("skills://research-pipeline")
 def skill_research_pipeline() -> str:
@@ -3391,12 +3715,16 @@ Protocol registered, 2+ databases searched, excluded studies listed, risk of bia
 # MAIN
 # ============================================================
 
+
 def main():
     # Load ranking data at startup
     _load_sjr()
     _load_qualis()
     _load_jql()
-    print(f"[INFO] BX-Scholar MCP Server starting with {len(_sjr_index)} SJR + {len(_qualis_index)} Qualis + {len(_jql_index)} JQL entries", file=sys.stderr)
+    print(
+        f"[INFO] BX-Scholar MCP Server starting with {len(_sjr_index)} SJR + {len(_qualis_index)} Qualis + {len(_jql_index)} JQL entries",
+        file=sys.stderr,
+    )
     try:
         asyncio.run(mcp.run())
     except KeyboardInterrupt:

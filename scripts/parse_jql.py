@@ -33,23 +33,22 @@ from pathlib import Path
 
 import fitz  # pymupdf
 
-
 # Column boundary thresholds (x-coordinate ranges)
 COL_BOUNDS = {
-    "issn":        (0,   55),
-    "journal":     (55,  234),
-    "subject":     (234, 287),
-    "ft2016":      (287, 310),
-    "cnrs2020":    (310, 335),
-    "den2021":     (335, 358),
-    "hceres2021":  (358, 385),
-    "meta2023":    (385, 410),
+    "issn": (0, 55),
+    "journal": (55, 234),
+    "subject": (234, 287),
+    "ft2016": (287, 310),
+    "cnrs2020": (310, 335),
+    "den2021": (335, 358),
+    "hceres2021": (358, 385),
+    "meta2023": (385, 410),
     "ajg_abs2024": (410, 436),
-    "ejl2024":     (436, 458),
-    "scopus2024":  (458, 488),
-    "vhb2024":     (488, 516),
-    "abdc2025":    (516, 542),
-    "fnege2025":   (542, 999),
+    "ejl2024": (436, 458),
+    "scopus2024": (458, 488),
+    "vhb2024": (488, 516),
+    "abdc2025": (516, 542),
+    "fnege2025": (542, 999),
 }
 
 FIELDNAMES = list(COL_BOUNDS.keys())
@@ -58,8 +57,14 @@ ISSN_RE = re.compile(r"^\d{4}-\d{3}[\dX]$")
 
 # Rows starting with these are headers/footers, not data
 SKIP_PREFIXES = (
-    "ISSN", "Journal", "Subject", "Harzing", "Professor",
-    "Journal Quality", "\u00a9", "Page",
+    "ISSN",
+    "Journal",
+    "Subject",
+    "Harzing",
+    "Professor",
+    "Journal Quality",
+    "\u00a9",
+    "Page",
 )
 
 
@@ -165,13 +170,9 @@ def parse_jql_pdf(pdf_path: str, output_csv: str) -> list[dict]:
                     elif col == "journal":
                         # Journal text might overflow into subject column
                         # Check if text contains subject at the end (after a known pattern)
-                        current_entry["journal"] += (
-                            " " + text if current_entry["journal"] else text
-                        )
+                        current_entry["journal"] += " " + text if current_entry["journal"] else text
                     elif col == "subject":
-                        current_entry["subject"] += (
-                            " " + text if current_entry["subject"] else text
-                        )
+                        current_entry["subject"] += " " + text if current_entry["subject"] else text
                     else:
                         # Rating columns - just assign
                         if current_entry[col]:
@@ -202,7 +203,7 @@ def parse_jql_pdf(pdf_path: str, output_csv: str) -> list[dict]:
 
     # Write CSV
     Path(output_csv).parent.mkdir(parents=True, exist_ok=True)
-    with open(output_csv, "w", newline="", encoding="utf-8") as f:
+    with Path(output_csv).open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
         writer.writeheader()
         writer.writerows(entries)
