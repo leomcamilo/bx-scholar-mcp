@@ -136,6 +136,6 @@ MIT — see [LICENSE](LICENSE).
 
 <div align="center">
 
-**Built by [BaXiJen](https://baxijen.ai)** · Powered by [MCP](https://modelcontextprotocol.io)
+**Built by [BaXiJen](https://baxijen.com.br)** · Powered by [MCP](https://modelcontextprotocol.io)
 
 </div>
