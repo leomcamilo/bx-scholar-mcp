@@ -51,6 +51,8 @@ class TestToolRegistration:
             "check_open_access",
             "download_pdf",
             "extract_pdf_text",
+            "snowball",
+            "resolve_reference_list",
         }
         assert expected.issubset(tool_names), f"Missing tools: {expected - tool_names}"
 
@@ -61,4 +63,4 @@ class TestToolRegistration:
 
         register_all_tools(server, settings, ranking_service)
         tools = server._tool_manager.list_tools()
-        assert len(tools) == 19  # current expected count
+        assert len(tools) == 21  # current expected count
