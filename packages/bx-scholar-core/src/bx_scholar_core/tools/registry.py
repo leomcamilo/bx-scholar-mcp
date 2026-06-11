@@ -13,6 +13,7 @@ from bx_scholar_core.tools.fulltext import register_fulltext_tools
 from bx_scholar_core.tools.get import register_get_tools
 from bx_scholar_core.tools.rank import register_rank_tools
 from bx_scholar_core.tools.search import register_search_tools
+from bx_scholar_core.tools.snowball import register_snowball_tools
 from bx_scholar_core.tools.verify import register_verify_tools
 
 if TYPE_CHECKING:
@@ -32,3 +33,4 @@ def register_all_tools(
     register_cite_tools(server, settings, cache)
     register_verify_tools(server, settings, cache)
     register_fulltext_tools(server, settings, cache)
+    register_snowball_tools(server, settings, cache)
