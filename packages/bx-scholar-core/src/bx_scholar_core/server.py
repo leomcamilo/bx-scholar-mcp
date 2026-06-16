@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import os
 import sys
 
 from mcp.server.fastmcp import FastMCP
 
 from bx_scholar_core.cache import CacheStore
 from bx_scholar_core.config import load_settings
+from bx_scholar_core.http_server import serve_http, should_serve_http
 from bx_scholar_core.logging import get_logger, setup_logging
 from bx_scholar_core.rankings.service import RankingService
 from bx_scholar_core.tools.registry import register_all_tools
@@ -29,8 +31,14 @@ def create_server() -> FastMCP:
         cache = CacheStore(db_path=settings.cache_dir / "bx_scholar_cache.duckdb")
         logger.info("cache_initialized", path=str(settings.cache_dir / "bx_scholar_cache.duckdb"))
 
-    # Create MCP server and register tools
-    server = FastMCP("bx-scholar-core")
+    # Create MCP server and register tools. host/port matter only for the
+    # streamable-http transport; passing them at construction lets FastMCP
+    # auto-enable DNS-rebinding protection for the loopback bind.
+    server = FastMCP(
+        "bx-scholar-core",
+        host=os.environ.get("BX_SCHOLAR_HOST", "127.0.0.1"),
+        port=int(os.environ.get("BX_SCHOLAR_PORT", "8097")),
+    )
     register_all_tools(server, settings, ranking_service, cache)
 
     logger.info(
@@ -47,7 +55,10 @@ def main() -> None:
     """CLI entry point for bx-scholar-core."""
     try:
         server = create_server()
-        server.run()
+        if should_serve_http():
+            serve_http(server)
+        else:
+            server.run()
     except KeyboardInterrupt:
         pass
     except SystemExit:

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import os
 import sys
 
 from mcp.server.fastmcp import FastMCP
 
 from bx_scholar_core.cache import CacheStore
 from bx_scholar_core.config import load_settings
+from bx_scholar_core.http_server import serve_http, should_serve_http
 from bx_scholar_core.logging import get_logger, setup_logging
 from bx_scholar_core.rankings.service import RankingService
 from bx_scholar_core.tools.registry import register_all_tools
@@ -34,8 +36,13 @@ def create_server() -> FastMCP:
     if settings.cache_enabled and settings.cache_dir:
         cache = CacheStore(db_path=settings.cache_dir / "bx_scholar_cache.duckdb")
 
-    # Create server and register everything
-    server = FastMCP("bx-scholar-workflow")
+    # Create server and register everything. host/port matter only for the
+    # streamable-http transport (default port differs from core to avoid clash).
+    server = FastMCP(
+        "bx-scholar-workflow",
+        host=os.environ.get("BX_SCHOLAR_HOST", "127.0.0.1"),
+        port=int(os.environ.get("BX_SCHOLAR_PORT", "8098")),
+    )
     register_all_tools(server, settings, ranking_service, cache)
     register_all_prompts(server)
     register_all_skills(server)
@@ -48,7 +55,10 @@ def main() -> None:
     """CLI entry point for bx-scholar-workflow."""
     try:
         server = create_server()
-        server.run()
+        if should_serve_http():
+            serve_http(server)
+        else:
+            server.run()
     except KeyboardInterrupt:
         pass
     except SystemExit:
