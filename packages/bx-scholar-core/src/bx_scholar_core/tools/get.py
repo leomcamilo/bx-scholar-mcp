@@ -22,7 +22,7 @@ def register_get_tools(mcp: object, settings: Settings, cache: CacheStore | None
 
     server: FastMCP = mcp  # type: ignore[assignment]
 
-    @server.tool()
+    @server.tool(structured_output=False)
     async def get_paper(identifier: str) -> str:
         """Get full metadata for a paper by DOI, arXiv ID, or OpenAlex ID.
         Accepts: '10.1234/test', 'https://doi.org/10.1234/test', 'W12345', '2401.12345'."""
@@ -61,7 +61,7 @@ def register_get_tools(mcp: object, settings: Settings, cache: CacheStore | None
         finally:
             await client.close()
 
-    @server.tool()
+    @server.tool(structured_output=False)
     async def get_author(
         author_name: str,
         per_page: int = 20,
@@ -86,7 +86,7 @@ def register_get_tools(mcp: object, settings: Settings, cache: CacheStore | None
         finally:
             await client.close()
 
-    @server.tool()
+    @server.tool(structured_output=False)
     async def get_journal_info(issn_or_name: str) -> str:
         """Get journal metadata including impact metrics, scope, and rankings (SJR/Qualis/JQL).
         Accepts ISSN (e.g. '0001-4273') or journal name."""
@@ -118,7 +118,7 @@ def register_get_tools(mcp: object, settings: Settings, cache: CacheStore | None
         finally:
             await client.close()
 
-    @server.tool()
+    @server.tool(structured_output=False)
     async def get_citations(
         identifier: str,
         direction: str = "citing",
@@ -144,7 +144,7 @@ def register_get_tools(mcp: object, settings: Settings, cache: CacheStore | None
         finally:
             await client.close()
 
-    @server.tool()
+    @server.tool(structured_output=False)
     async def get_keyword_trends(
         keywords: str,
         year_from: int = 2015,

@@ -17,7 +17,7 @@ def register_rank_tools(mcp: object, settings: Settings, ranking_service: Rankin
 
     server: FastMCP = mcp  # type: ignore[assignment]
 
-    @server.tool()
+    @server.tool(structured_output=False)
     async def rank_journal(issn_or_name: str) -> str:
         """Look up journal ranking in local SJR + Qualis + JQL databases.
         Fast local lookup (no API call). Accepts ISSN or journal name.
@@ -44,7 +44,7 @@ def register_rank_tools(mcp: object, settings: Settings, ranking_service: Rankin
         result["best_tier"] = metrics.best_tier
         return json.dumps(result, ensure_ascii=False, indent=2)
 
-    @server.tool()
+    @server.tool(structured_output=False)
     async def top_journals_for_field(
         field: str,
         limit: int = 20,

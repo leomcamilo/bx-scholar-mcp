@@ -23,7 +23,7 @@ def register_verify_tools(mcp: object, settings: Settings, cache: CacheStore | N
 
     server: FastMCP = mcp  # type: ignore[assignment]
 
-    @server.tool()
+    @server.tool(structured_output=False)
     async def verify_citation(
         author: str,
         year: int,
@@ -80,7 +80,7 @@ def register_verify_tools(mcp: object, settings: Settings, cache: CacheStore | N
             }
         )
 
-    @server.tool()
+    @server.tool(structured_output=False)
     async def check_retraction(doi: str) -> str:
         """Check if a paper has been retracted. Always verify before citing."""
         doi = doi.strip().replace("https://doi.org/", "")
@@ -91,7 +91,7 @@ def register_verify_tools(mcp: object, settings: Settings, cache: CacheStore | N
         finally:
             await cr.close()
 
-    @server.tool()
+    @server.tool(structured_output=False)
     async def batch_verify_references(references_json: str) -> str:
         """Verify a batch of references (up to 30). Anti-hallucination tool.
         Input: JSON array of {"author": "...", "year": 2020, "title": "key words"}.

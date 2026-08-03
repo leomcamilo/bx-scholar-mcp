@@ -22,7 +22,7 @@ def register_cite_tools(mcp: object, settings: Settings, cache: CacheStore | Non
 
     server: FastMCP = mcp  # type: ignore[assignment]
 
-    @server.tool()
+    @server.tool(structured_output=False)
     async def get_influential_citations(doi_or_s2id: str, limit: int = 20) -> str:
         """Get influential citations — citations where the citing paper substantially
         engages with this work (not just incidental mentions).
@@ -44,7 +44,7 @@ def register_cite_tools(mcp: object, settings: Settings, cache: CacheStore | Non
         finally:
             await s2.close()
 
-    @server.tool()
+    @server.tool(structured_output=False)
     async def get_citation_context(citing_doi: str, cited_doi: str) -> str:
         """Get exact text snippets where one paper cites another.
         Useful for understanding HOW a paper is cited (background, method, result)."""
@@ -64,7 +64,7 @@ def register_cite_tools(mcp: object, settings: Settings, cache: CacheStore | Non
         finally:
             await s2.close()
 
-    @server.tool()
+    @server.tool(structured_output=False)
     async def build_citation_network(
         seed_dois: str,
         depth: int = 1,
@@ -119,7 +119,7 @@ def register_cite_tools(mcp: object, settings: Settings, cache: CacheStore | Non
             indent=2,
         )
 
-    @server.tool()
+    @server.tool(structured_output=False)
     async def find_co_citation_clusters(
         dois: str,
         min_co_citations: int = 2,

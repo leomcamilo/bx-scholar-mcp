@@ -148,7 +148,7 @@ requires-dist = [
     { name = "duckdb", specifier = ">=1.0.0" },
     { name = "httpx", specifier = ">=0.28.0" },
     { name = "marker-pdf", marker = "extra == 'marker'", specifier = ">=1.0.0" },
-    { name = "mcp", extras = ["cli"], specifier = ">=1.12.3" },
+    { name = "mcp", extras = ["cli"], specifier = ">=1.12.3,<2" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10.0" },
     { name = "openpyxl", specifier = ">=3.1.0" },
     { name = "pydantic", specifier = ">=2.0.0" },
@@ -199,7 +199,7 @@ requires-dist = [
     { name = "bx-scholar-workflow", editable = "packages/bx-scholar-workflow" },
     { name = "httpx", specifier = ">=0.28.0" },
     { name = "marker-pdf", marker = "extra == 'marker'", specifier = ">=1.0.0" },
-    { name = "mcp", extras = ["cli"], specifier = ">=1.12.3" },
+    { name = "mcp", extras = ["cli"], specifier = ">=1.12.3,<2" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10.0" },
     { name = "openpyxl", specifier = ">=3.1.0" },
     { name = "pandas", specifier = ">=2.2.0" },
@@ -232,7 +232,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "bx-scholar-core", editable = "packages/bx-scholar-core" },
-    { name = "mcp", extras = ["cli"], specifier = ">=1.12.3" },
+    { name = "mcp", extras = ["cli"], specifier = ">=1.12.3,<2" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23.0" },
     { name = "pyyaml", specifier = ">=6.0.0" },

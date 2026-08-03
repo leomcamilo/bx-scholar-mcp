@@ -12,7 +12,7 @@ authors = [
 # Legacy monolith dependencies — kept for run_server.py backward compat
 dependencies = [
     "httpx>=0.28.0",
-    "mcp[cli]>=1.12.3",
+    "mcp[cli]>=1.12.3,<2",
     "python-dotenv>=1.1.0",
     "pydantic>=2.0.0",
     "openpyxl>=3.1.0",

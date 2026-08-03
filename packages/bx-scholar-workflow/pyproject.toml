@@ -29,7 +29,7 @@ classifiers = [
 ]
 dependencies = [
     "bx-scholar-core>=0.1.0",
-    "mcp[cli]>=1.12.3",
+    "mcp[cli]>=1.12.3,<2",
     "pyyaml>=6.0.0",
 ]
 

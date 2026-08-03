@@ -41,7 +41,7 @@ def register_search_tools(mcp: object, settings: Settings, cache: CacheStore | N
 
     server: FastMCP = mcp  # type: ignore[assignment]
 
-    @server.tool()
+    @server.tool(structured_output=False)
     async def search_papers(
         query: str,
         sources: str = "openalex,crossref",
@@ -158,7 +158,7 @@ def register_search_tools(mcp: object, settings: Settings, cache: CacheStore | N
             },
         )
 
-    @server.tool()
+    @server.tool(structured_output=False)
     async def search_journal_papers(
         issn: str,
         query: str | None = None,

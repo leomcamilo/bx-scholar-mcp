@@ -24,7 +24,7 @@ def register_fulltext_tools(
 
     server: FastMCP = mcp  # type: ignore[assignment]
 
-    @server.tool()
+    @server.tool(structured_output=False)
     async def check_open_access(doi: str) -> str:
         """Check if a paper has Open Access full-text available via Unpaywall.
         Returns OA status and PDF URL if available."""
@@ -35,7 +35,7 @@ def register_fulltext_tools(
         finally:
             await client.close()
 
-    @server.tool()
+    @server.tool(structured_output=False)
     async def download_pdf(url: str, save_path: str) -> str:
         """Download a PDF from a URL (typically an OA source) and save locally.
         Creates parent directories if needed."""
@@ -72,7 +72,7 @@ def register_fulltext_tools(
             except Exception as exc:
                 return json.dumps({"error": str(exc), "url": url})
 
-    @server.tool()
+    @server.tool(structured_output=False)
     async def extract_pdf_text(pdf_path: str, output_format: str = "markdown") -> str:
         """Extract text from a PDF file as markdown or plain text.
         Uses marker-pdf (ML-powered) for quality extraction with pymupdf fallback.
