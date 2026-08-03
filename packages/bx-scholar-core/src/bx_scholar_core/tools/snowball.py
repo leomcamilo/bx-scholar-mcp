@@ -149,7 +149,7 @@ def register_snowball_tools(
         paper = await client.get_work(resolved.value)
         return paper.doi if paper and paper.doi else None
 
-    @server.tool()
+    @server.tool(structured_output=False)
     async def snowball(
         seed_identifiers: str,
         direction: str = "both",
@@ -215,7 +215,7 @@ def register_snowball_tools(
             logger.error("snowball_failed", error=str(exc))
             return json.dumps({"error": str(exc)})
 
-    @server.tool()
+    @server.tool(structured_output=False)
     async def resolve_reference_list(
         references_text: str,
         enrich_abstracts: bool = True,
