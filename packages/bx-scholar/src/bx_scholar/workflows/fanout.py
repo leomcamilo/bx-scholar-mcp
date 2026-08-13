@@ -52,6 +52,9 @@ class SourceResult:
     reported_total: int = 0
     elapsed_ms: float = 0.0
     detail: str = ""
+    # Por último de propósito: este dataclass é construído posicionalmente em
+    # vários pontos (inclusive nos testes), e inserir campo no meio quebra todos.
+    essential: bool = False
 
 
 @dataclass
@@ -96,11 +99,34 @@ class FanoutResult:
                 notes.append(f"{r.name}: limite de requisições atingido — cobertura parcial.")
             elif r.coverage is Coverage.ERROR:
                 notes.append(f"{r.name}: erro ao consultar ({r.detail}).")
+        if missing := self.essential_missing:
+            notes.insert(
+                0,
+                "ATENÇÃO: base(s) essencial(is) fora do ar nesta busca — "
+                f"{', '.join(missing)}. O resultado abaixo NÃO representa a "
+                "literatura disponível; trate como busca incompleta.",
+            )
         return notes
 
     @property
     def degraded(self) -> bool:
         return any(r.coverage not in (Coverage.COMPLETE, Coverage.PARTIAL) for r in self.results)
+
+    @property
+    def essential_missing(self) -> list[str]:
+        """Fontes marcadas como essenciais que NÃO responderam.
+
+        `ConnectorProfile.essential` existia e não era lido por ninguém — o
+        comentário do módulo prometia que uma fonte essencial fora do ar mudava
+        o estado do pack, e isso não acontecia. Agora acontece: sem OpenAlex ou
+        CrossRef, o resultado não é "não há literatura", é "não conseguimos
+        procurar direito", e a diferença precisa chegar a quem lê.
+        """
+        return [
+            r.name
+            for r in self.results
+            if r.essential and r.coverage not in (Coverage.COMPLETE, Coverage.PARTIAL)
+        ]
 
 
 async def _run_one(conn: Connector, req: SearchRequest, timeout: float) -> SourceResult:
@@ -109,7 +135,7 @@ async def _run_one(conn: Connector, req: SearchRequest, timeout: float) -> Sourc
         papers, total = await asyncio.wait_for(conn.search(req), timeout=timeout)
         elapsed = (time.monotonic() - t0) * 1000
         cov = Coverage.PARTIAL if total > len(papers) else Coverage.COMPLETE
-        return SourceResult(conn.name, cov, papers, total, elapsed)
+        return SourceResult(conn.name, cov, papers, total, elapsed, essential=conn.essential)
 
     except TimeoutError:
         # Não é falha da fonte, é escolha nossa de não esperar mais. Sem
@@ -117,6 +143,7 @@ async def _run_one(conn: Connector, req: SearchRequest, timeout: float) -> Sourc
         return SourceResult(
             conn.name,
             Coverage.TIMEOUT_PARTIAL,
+            essential=conn.essential,
             elapsed_ms=(time.monotonic() - t0) * 1000,
             detail=f"timeout de {timeout:.0f}s",
         )
@@ -125,6 +152,7 @@ async def _run_one(conn: Connector, req: SearchRequest, timeout: float) -> Sourc
         return SourceResult(
             conn.name,
             Coverage.UNAVAILABLE,
+            essential=conn.essential,
             elapsed_ms=(time.monotonic() - t0) * 1000,
             detail=str(exc),
         )
@@ -132,7 +160,8 @@ async def _run_one(conn: Connector, req: SearchRequest, timeout: float) -> Sourc
     except RetryableHTTPError as exc:
         cov = Coverage.RATE_LIMITED if exc.status_code == 429 else Coverage.ERROR
         return SourceResult(
-            conn.name, cov, elapsed_ms=(time.monotonic() - t0) * 1000, detail=str(exc)
+            conn.name, cov, essential=conn.essential,
+            elapsed_ms=(time.monotonic() - t0) * 1000, detail=str(exc)
         )
 
     except (NonRetryableHTTPError, Exception) as exc:  # noqa: BLE001
@@ -140,6 +169,7 @@ async def _run_one(conn: Connector, req: SearchRequest, timeout: float) -> Sourc
         return SourceResult(
             conn.name,
             Coverage.ERROR,
+            essential=conn.essential,
             elapsed_ms=(time.monotonic() - t0) * 1000,
             detail=type(exc).__name__,
         )

@@ -147,9 +147,16 @@ async def lookup(issns: list[str], names: list[str]) -> dict[str, VenueAssessmen
         if not unresolved:
             return result
 
-        # Candidatos por nome: uma query só, trazendo name_norm de todos os
-        # veículos. São ~50k strings curtas — cabe, e evita 50k comparações
-        # fuzzy por lookup, que é o custo que o v1 pagava.
+        # CUSTO REAL, sem eufemismo: isto lê os 46.818 name_norm da tabela a
+        # cada busca que tenha ao menos um veículo não resolvido por ISSN, e o
+        # `extractOne` compara contra todos eles, por nome não resolvido. É
+        # melhor que o v1 (que varria DOIS índices em memória a cada miss) mas
+        # NÃO é barato, e vira leitura de tabela inteira no Postgres.
+        #
+        # Só não é gargalo hoje porque a maioria das obras traz ISSN e sai na
+        # primeira etapa. Quando incomodar, as saídas são cache do catálogo em
+        # processo (invalidado pelo load-rankings) ou índice pg_trgm — nesta
+        # ordem, porque a primeira é portátil.
         catalogue = (await s.execute(select(Venue.id, Venue.name_norm))).all()
         index = {norm: vid for vid, norm in catalogue if norm}
 

@@ -28,11 +28,11 @@ DESCRIPTION = """Busca literatura acadêmica em várias bases ao mesmo tempo, de
 checa retratação e devolve um resumo com o identificador de um Evidence Pack persistido.
 
 Modos:
-- quick: uma base + cache, resposta em segundos. Use para orientação rápida.
-- balanced (padrão): OpenAlex + CrossRef + SciELO em paralelo, com teto de tempo \
-por base. Use para a maioria das perguntas.
-- deep: todas as bases pertinentes, assíncrono — retorna o pack_id na hora e o \
-resultado fica pronto depois; consulte com read_pack(section='job').
+- quick: só o OpenAlex, com cache. Resposta em segundos, para orientação rápida.
+- balanced (padrão): OpenAlex, CrossRef, produção em português e Europe PMC \
+(PubMed/PMC) em paralelo, com teto de tempo por base. Use para a maioria das perguntas.
+- deep: AINDA NÃO IMPLEMENTADO nesta versão. Pedir deep executa balanced e a \
+resposta avisa. Não prometa ao usuário uma busca mais profunda do que a que rodou.
 
 LEIA SEMPRE o bloco `coverage` da resposta antes de afirmar que algo "não existe \
 na literatura": uma base em timeout_partial ou unavailable NÃO foi consultada com \

@@ -159,14 +159,24 @@ class TestIntegrityGate:
         assert all(w["integrity"] == "unknown" for w in out["works"])
         assert any("NÃO verificada" in n for n in out["limitations"])
 
-    async def test_work_without_doi_is_unknown_not_clear(self, server, store) -> None:
+    async def test_work_without_doi_is_unknown_not_clear(self, server, store, monkeypatch) -> None:
+        """Sem DOI não há como consultar retratação — e isso é `unknown`, não `clear`.
+
+        (Este teste tinha um `or` que o fazia passar por vazio; agora força o
+        caso montando uma obra sem DOI de propósito.)
+        """
         await self._seed_retraction()
-        async with db.session() as s:
-            s.add(Integrity(doi="10.1/other", status="clear"))
-        out = await call(server, "search_literature", query="mobilidade urbana")
-        assert any("sem DOI" in n for n in out["limitations"]) or all(
-            w["integrity"] != "unknown" for w in out["works"]
-        )
+        from conftest import make_paper, stub_connector
+
+        def _one_without_doi(_settings, _cache, names):
+            return [stub_connector("openalex", [make_paper("Obra sem identificador", doi="")])]
+
+        monkeypatch.setattr(search_tool, "build_connectors", _one_without_doi)
+        out = await call(server, "search_literature", query="qualquer")
+
+        assert out["works"], "a obra sem DOI deve continuar na seleção"
+        assert all(w["integrity"] == "unknown" for w in out["works"])
+        assert any("sem DOI" in n for n in out["limitations"])
 
 
 class TestReadPack:

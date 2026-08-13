@@ -3,9 +3,10 @@
 Regra que vale para todo este módulo: **nada específico de um dialeto no
 núcleo**. JSON entra por ``JSONCol`` (que vira ``JSONB`` no Postgres e ``JSON``
 no resto), datas são epoch em ``BigInteger``, e não há FTS5 nem ``tsvector``
-aqui. Busca textual fuzzy fica em ``store/textsearch.py``, atrás de uma função
-que tem um caminho rápido opcional para Postgres (``pg_trgm``) e um fallback
-portátil em ``rapidfuzz``. Trocar de engine é mudar ``BX_SCHOLAR_DATABASE_URL``.
+aqui. O casamento fuzzy de nome de veículo está em ``store/venues.py`` e é
+100% portátil (``rapidfuzz`` em Python) — o caminho rápido com ``pg_trgm`` foi
+planejado e NÃO existe; ver a nota de custo em ``venues.lookup``. Trocar de
+engine é mudar ``BX_SCHOLAR_DATABASE_URL``.
 
 Separação deliberada (ver o plano): o **cache HTTP não mora aqui**. São dezenas
 de MB de escrita de alta rotação a cada busca — num Postgres isso vira pressão

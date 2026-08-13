@@ -23,8 +23,6 @@ from bx_scholar_core.clients.profile import profile_for
 from bx_scholar_core.clients.semantic_scholar import SemanticScholarClient
 from bx_scholar_core.models.paper import Paper
 
-from bx_scholar.cache.policy import Entity, policy
-
 
 @dataclass
 class SearchRequest:
@@ -107,8 +105,10 @@ def build_connectors(settings, cache, names: list[str]) -> list[Connector]:
             client = ArXivClient(ua, cache=cache, profile=prof)
 
             async def _search(req: SearchRequest, c=client) -> tuple[list[Paper], int]:
-                # O ArXiv não filtra por ano na API; o recorte é aplicado depois,
-                # no merge — e isso é registrado como limitação do pack.
+                # O ArXiv não filtra por ano na API e NADA filtra depois: um
+                # recorte de ano pedido pelo usuário é ignorado por esta fonte.
+                # Só aparece no modo deep, que hoje não roda — quando F5 entrar,
+                # ou se filtra aqui ou vira nota em `limitations`.
                 papers, total = await c.search(req.query, max_results=req.limit)
                 return papers, total
 
@@ -172,4 +172,3 @@ MODE_SOURCES: dict[str, list[str]] = {
     "deep": ["openalex", "crossref", "brasil", "europepmc", "semantic_scholar", "arxiv"],
 }
 
-SEARCH_CACHE_POLICY = policy(Entity.SEARCH_RESULTS)

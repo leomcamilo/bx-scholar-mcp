@@ -92,3 +92,29 @@ class TestCoverageEnum:
     )
     def test_degraded_states_are_not_success(self, cov: Coverage) -> None:
         assert cov not in (Coverage.COMPLETE, Coverage.PARTIAL)
+
+
+class TestEssentialSources:
+    """`essential` era declarado no perfil e nunca lido — o comentário do módulo
+    prometia que uma fonte essencial fora do ar mudava o estado do pack."""
+
+    async def test_essential_source_down_is_flagged_loudly(self) -> None:
+        conns = [
+            stub_connector("openalex", raises=RetryableHTTPError(500), essential=True),
+            stub_connector("brasil", [make_paper(doi="10.1/a")]),
+        ]
+        res = await fan_out(conns, REQ, timeout=1.0)
+        assert res.essential_missing == ["openalex"]
+        # A nota vem PRIMEIRO: sem OpenAlex o resultado não é "não há
+        # literatura", é "não conseguimos procurar direito".
+        assert "essencial" in res.limitations()[0]
+        assert "busca incompleta" in res.limitations()[0]
+
+    async def test_non_essential_source_down_is_not_alarming(self) -> None:
+        conns = [
+            stub_connector("openalex", [make_paper(doi="10.1/a")], essential=True),
+            stub_connector("arxiv", raises=RetryableHTTPError(500)),
+        ]
+        res = await fan_out(conns, REQ, timeout=1.0)
+        assert res.essential_missing == []
+        assert not any("essencial" in n for n in res.limitations())

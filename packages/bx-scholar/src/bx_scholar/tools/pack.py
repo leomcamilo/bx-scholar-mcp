@@ -25,8 +25,8 @@ Seções:
 - works: obras selecionadas, paginadas (use offset para avançar).
 - excluded: obras que ficaram FORA da seleção e por quê (retratadas, por exemplo).
 - coverage: só o estado por base — quais foram consultadas com sucesso.
-- claims: afirmações e seus estados de verificação (packs de verify_claims).
-- job: andamento de uma busca em modo deep.
+- claims: AINDA VAZIO — depende de verify_claims, que não existe nesta versão.
+- job: AINDA VAZIO — depende do modo deep, que não existe nesta versão.
 
 Não invente pack_id: use o que veio na resposta anterior."""
 
