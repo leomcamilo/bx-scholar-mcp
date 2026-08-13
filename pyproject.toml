@@ -21,6 +21,7 @@ dependencies = [
     # Workspace packages
     "bx-scholar-core",
     "bx-scholar-workflow",
+    "bx-scholar",
 ]
 
 [project.optional-dependencies]
@@ -53,3 +54,4 @@ members = ["packages/*"]
 [tool.uv.sources]
 bx-scholar-core = { workspace = true }
 bx-scholar-workflow = { workspace = true }
+bx-scholar = { workspace = true }

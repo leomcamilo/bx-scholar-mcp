@@ -1,0 +1,72 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "bx-scholar"
+version = "2.0.0.dev0"
+description = "BX-Scholar v2 — evidence-oriented academic research MCP (few tools, rich internal pipelines, persisted evidence packs)"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+authors = [
+    {name = "Leonardo Camilo", email = "leo@baxi.ia.br"},
+]
+keywords = [
+    "mcp",
+    "academic-research",
+    "evidence",
+    "citation-verification",
+    "retraction-watch",
+    "scielo",
+    "bdtd",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+]
+dependencies = [
+    # Camadas 1 e 3 (conectores + determinístico) vêm do core, que aqui é usado
+    # como BIBLIOTECA: importamos clients/, models/, dedup e ids, nunca tools/.
+    "bx-scholar-core",
+    "mcp[cli]>=1.12.3",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "structlog>=24.0.0",
+    "httpx>=0.28.0",
+    "rapidfuzz>=3.0.0",
+    # Store durável — dialeto-agnóstico por construção. asyncpg e aiosqlite são
+    # os dois alvos suportados; trocar de engine é mudar BX_SCHOLAR_DATABASE_URL.
+    "sqlalchemy[asyncio]>=2.0.30",
+    "alembic>=1.13.0",
+    "asyncpg>=0.29.0",
+    "aiosqlite>=0.20.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=5.0.0",
+    "mypy>=1.10.0",
+]
+
+[project.scripts]
+bx-scholar = "bx_scholar.server:main"
+bx-scholar-admin = "bx_scholar.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/leomcamilo/bx-scholar-mcp"
+Issues = "https://github.com/leomcamilo/bx-scholar-mcp/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/bx_scholar"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

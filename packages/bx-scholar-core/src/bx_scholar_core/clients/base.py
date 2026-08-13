@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -19,6 +21,7 @@ from bx_scholar_core.logging import get_logger
 
 if TYPE_CHECKING:
     from bx_scholar_core.cache.store import CacheStore
+    from bx_scholar_core.clients.profile import ConnectorProfile
 
 logger = get_logger(__name__)
 
@@ -56,24 +59,84 @@ class AsyncHTTPClient:
     max_retries: int = 3
     timeout: float = 30.0
 
+    #: Nome do perfil em ``clients.profile.PROFILES``. Subclasses podem definir;
+    #: quando ausente, o cliente segue com os atributos de classe acima.
+    profile_name: str = ""
+
     def __init__(
         self,
         user_agent: str = "BX-Scholar/0.1.0",
         cache: CacheStore | None = None,
+        profile: ConnectorProfile | None = None,
     ) -> None:
+        """``profile`` é opcional e aditivo.
+
+        Sem perfil, o comportamento é idêntico ao v1 (atributos de classe,
+        sem breaker e sem teto de concorrência) — é o que mantém o servidor
+        legado funcionando sem alteração. Com perfil, o cliente ganha limite de
+        concorrência e circuit breaker.
+        """
+        if profile is None and self.profile_name:
+            from bx_scholar_core.clients.profile import profile_for
+
+            profile = profile_for(self.profile_name)
+
+        self._profile = profile
         self._user_agent = user_agent
-        self._limiter = AsyncLimiter(self.rate_limit, self.max_rate_period)
+        rate = profile.rate_limit if profile else self.rate_limit
+        period = profile.rate_period if profile else self.max_rate_period
+        self._limiter = AsyncLimiter(rate, period)
+        self._semaphore = asyncio.Semaphore(profile.max_concurrency) if profile else None
+        self._breaker = profile.breaker() if profile else None
         self._client: httpx.AsyncClient | None = None
         self._cache = cache
+
+    @property
+    def effective_timeout(self) -> float:
+        return self._profile.timeout if self._profile else self.timeout
+
+    @property
+    def effective_retries(self) -> int:
+        return self._profile.max_retries if self._profile else self.max_retries
+
+    @property
+    def circuit(self) -> dict | None:
+        """Estado do breaker, para o bloco ``coverage`` da resposta."""
+        return self._breaker.snapshot() if self._breaker else None
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
-                timeout=self.timeout,
+                timeout=self.effective_timeout,
                 follow_redirects=True,
                 headers={"User-Agent": self._user_agent},
             )
         return self._client
+
+    @asynccontextmanager
+    async def _guarded(self) -> AsyncIterator[None]:
+        """Breaker + teto de concorrência em volta de uma chamada completa.
+
+        O breaker envolve a chamada INTEIRA, não cada tentativa: três retries de
+        uma mesma requisição contam como uma falha, senão um único pedido a uma
+        fonte fora do ar já abriria o circuito com ``failure_threshold=3``.
+        """
+        if self._breaker is None:
+            yield
+            return
+
+        self._breaker.allow()  # levanta CircuitOpenError se recusado
+        try:
+            if self._semaphore is not None:
+                async with self._semaphore:
+                    yield
+            else:
+                yield
+        except Exception:
+            self._breaker.record_failure()
+            raise
+        else:
+            self._breaker.record_success()
 
     def _extra_headers(self) -> dict[str, str]:
         """Override in subclasses to add API-key headers, etc."""
@@ -111,7 +174,7 @@ class AsyncHTTPClient:
 
         @retry(
             retry=retry_if_exception(_is_retryable),
-            stop=stop_after_attempt(self.max_retries),
+            stop=stop_after_attempt(self.effective_retries),
             wait=wait_exponential_jitter(initial=1, max=30, jitter=2),
             reraise=True,
         )
@@ -152,7 +215,8 @@ class AsyncHTTPClient:
 
                 return resp
 
-        resp = await _do_request()
+        async with self._guarded():
+            resp = await _do_request()
 
         # Store successful response in cache
         if self._cache and cache_policy:
@@ -187,7 +251,7 @@ class AsyncHTTPClient:
 
         @retry(
             retry=retry_if_exception(_is_retryable),
-            stop=stop_after_attempt(self.max_retries),
+            stop=stop_after_attempt(self.effective_retries),
             wait=wait_exponential_jitter(initial=1, max=30, jitter=2),
             reraise=True,
         )
@@ -212,7 +276,8 @@ class AsyncHTTPClient:
 
                 return resp
 
-        resp = await _do_request()
+        async with self._guarded():
+            resp = await _do_request()
 
         # Store successful response in cache
         if self._cache and cache_policy:

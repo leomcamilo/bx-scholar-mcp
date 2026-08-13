@@ -33,3 +33,6 @@ htmlcov/
 # DuckDB cache (runtime)
 *.duckdb
 *.duckdb.wal
+
+# v2
+.venv/
