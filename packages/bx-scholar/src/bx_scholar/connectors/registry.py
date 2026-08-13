@@ -15,10 +15,11 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from bx_scholar_core.clients.arxiv import ArXivClient
+from bx_scholar_core.clients.brasil import BrasilClient
 from bx_scholar_core.clients.crossref import CrossRefClient
+from bx_scholar_core.clients.europepmc import EuropePMCClient
 from bx_scholar_core.clients.openalex import OpenAlexClient
 from bx_scholar_core.clients.profile import profile_for
-from bx_scholar_core.clients.scielo import SciELOClient
 from bx_scholar_core.clients.semantic_scholar import SemanticScholarClient
 from bx_scholar_core.models.paper import Paper
 
@@ -111,12 +112,27 @@ def build_connectors(settings, cache, names: list[str]) -> list[Connector]:
                 papers, total = await c.search(req.query, max_results=req.limit)
                 return papers, total
 
-        elif name == "scielo":
-            client = SciELOClient(ua, cache=cache, profile=prof)
+        elif name == "brasil":
+            client = BrasilClient(settings.polite_email, ua, cache=cache, profile=prof)
 
             async def _search(req: SearchRequest, c=client) -> tuple[list[Paper], int]:
                 return await c.search(
-                    req.query, year_from=req.year_from, year_to=req.year_to, per_page=req.limit
+                    req.query,
+                    year_from=req.year_from,
+                    year_to=req.year_to,
+                    limit=req.limit,
+                    language=req.language or "pt",
+                )
+
+        elif name == "europepmc":
+            client = EuropePMCClient(settings.polite_email, ua, cache=cache, profile=prof)
+
+            async def _search(req: SearchRequest, c=client) -> tuple[list[Paper], int]:
+                return await c.search(
+                    req.query,
+                    year_from=req.year_from,
+                    year_to=req.year_to,
+                    limit=req.limit,
                 )
 
         elif name == "semantic_scholar":
@@ -144,11 +160,16 @@ def build_connectors(settings, cache, names: list[str]) -> list[Connector]:
 MODE_SOURCES: dict[str, list[str]] = {
     # Uma fonte só, cache quente, resposta em segundos.
     "quick": ["openalex"],
-    # Cobertura honesta com teto de tempo; SciELO entra sempre porque é o
-    # diferencial brasileiro e porque sem ele a cobertura em português mente.
-    "balanced": ["openalex", "crossref", "scielo"],
-    # Tudo que for pertinente, assíncrono.
-    "deep": ["openalex", "crossref", "scielo", "semantic_scholar", "arxiv"],
+    # Cobertura honesta com teto de tempo. `brasil` entra sempre: sem o eixo de
+    # idioma, a cobertura em português MENTE — o filtro de publisher SciELO do
+    # OpenAlex devolve 63 resultados onde `language:pt` devolve 62.176.
+    # `europepmc` entra aqui e não só no deep: é a ÚNICA fonte biomédica (o v1
+    # não tinha nenhuma) e a única que entrega texto integral com seções
+    # nomeadas, que é o que sustenta verification_basis="fulltext". As quatro
+    # rodam em paralelo com teto próprio, então o custo é de uma requisição, não
+    # de mais tempo de parede.
+    "balanced": ["openalex", "crossref", "brasil", "europepmc"],
+    "deep": ["openalex", "crossref", "brasil", "europepmc", "semantic_scholar", "arxiv"],
 }
 
 SEARCH_CACHE_POLICY = policy(Entity.SEARCH_RESULTS)

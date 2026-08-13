@@ -15,7 +15,7 @@ from mcp.server.fastmcp import FastMCP
 
 from bx_scholar.connectors.registry import MODE_SOURCES, SearchRequest, build_connectors
 from bx_scholar.store import packs
-from bx_scholar.workflows import integrity
+from bx_scholar.workflows import enrich, integrity
 from bx_scholar.workflows.fanout import fan_out
 from bx_scholar.workflows.merge import merge_results, rank_works
 from bx_scholar.workflows.projection import project_search
@@ -109,9 +109,10 @@ def register(server: FastMCP, settings, cache) -> None:
         selected, integrity_notes = await integrity.apply_gate(
             ranked, include_retracted=include_retracted
         )
+        venue_by_work, venue_notes = await enrich.attach_venue_assessment(ranked)
 
         await packs.persist_works(ranked)
-        await packs.add_work_items(pack_id, ranked, selected)
+        await packs.add_work_items(pack_id, ranked, selected, venue_by_work)
 
         # Deliberadamente SEM um total agregado. Somar os totais reportados por
         # cada base produz um número que parece "quantos artigos existem" e não
@@ -129,7 +130,7 @@ def register(server: FastMCP, settings, cache) -> None:
                 1 for w in ranked if w.integrity_status == "retracted" and w.work_key not in selected
             ),
         }
-        limitations = deep_note + fanout.limitations() + integrity_notes
+        limitations = deep_note + fanout.limitations() + integrity_notes + venue_notes
         status = "partial" if fanout.degraded else "complete"
 
         await packs.finalize_pack(
@@ -141,7 +142,11 @@ def register(server: FastMCP, settings, cache) -> None:
         )
 
         selected_rows = [
-            {**_row_payload(w), "work_key": w.work_key}
+            {
+                **_row_payload(w),
+                "work_key": w.work_key,
+                "venue_tier": (venue_by_work.get(w.work_key) or {}).get("best_tier"),
+            }
             for w in ranked
             if w.work_key in selected
         ]

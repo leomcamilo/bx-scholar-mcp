@@ -25,6 +25,7 @@ from bx_scholar import __version__
 from bx_scholar.cache.local import LocalHTTPCache
 from bx_scholar.config import load_settings
 from bx_scholar.store import db
+from bx_scholar.tools import fulltext as fulltext_tool
 from bx_scholar.tools import pack as pack_tool
 from bx_scholar.tools import search as search_tool
 
@@ -58,11 +59,12 @@ def create_server() -> FastMCP:
 
     search_tool.register(server, settings, cache)
     pack_tool.register(server, settings)
+    fulltext_tool.register(server, settings, cache)
 
     logger.info(
         "server_ready",
         version=__version__,
-        tools=2,
+        tools=3,
         dialect="postgres" if settings.is_postgres else "sqlite",
         cache_enabled=settings.cache_enabled,
     )

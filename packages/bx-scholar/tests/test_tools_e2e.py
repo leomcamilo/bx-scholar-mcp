@@ -39,7 +39,7 @@ def server(settings, monkeypatch):
             "crossref": stub_connector(
                 "crossref", [make_paper("Mobilidade urbana preditiva", doi="10.1/a")]
             ),
-            "scielo": stub_connector("scielo", [make_paper("Mobilidade no Brasil", doi="10.1/c")], delay=5.0),
+            "brasil": stub_connector("brasil", [make_paper("Mobilidade no Brasil", doi="10.1/c")], delay=5.0),
         }
         return [catalogue[n] for n in names if n in catalogue]
 
@@ -86,8 +86,8 @@ class TestSearchLiterature:
 
     async def test_slow_source_shows_up_as_timeout_not_as_empty(self, server, store) -> None:
         out = await call(server, "search_literature", query="mobilidade urbana")
-        assert out["coverage"]["scielo"] == "timeout_partial"
-        assert any("scielo" in n for n in out["limitations"])
+        assert out["coverage"]["brasil"] == "timeout_partial"
+        assert any("brasil" in n for n in out["limitations"])
 
     async def test_dedup_across_sources(self, server, store) -> None:
         out = await call(server, "search_literature", query="mobilidade urbana")
@@ -174,7 +174,7 @@ class TestReadPack:
         out = await call(server, "search_literature", query="mobilidade urbana")
         summary = await call(server, "read_pack", pack_id=out["pack_id"], section="summary")
         assert summary["status"] == "partial"  # scielo deu timeout
-        assert summary["coverage"]["scielo"] == "timeout_partial"
+        assert summary["coverage"]["brasil"] == "timeout_partial"
         assert summary["workflow_version"] == "bx-scholar-v2.0"
 
     async def test_works_pagination(self, server, store) -> None:

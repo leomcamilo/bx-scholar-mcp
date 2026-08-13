@@ -37,8 +37,8 @@ BASE = dict(
     mode="balanced",
     query={"q": "teste"},
     counts={"works_found": 500},
-    coverage={"openalex": "complete", "scielo": "timeout_partial"},
-    limitations=["scielo: excedeu o tempo limite"],
+    coverage={"openalex": "complete", "brasil": "timeout_partial"},
+    limitations=["brasil: excedeu o tempo limite"],
 )
 
 
@@ -69,7 +69,7 @@ class TestCeiling:
         # se algo tem de sair, sai obra, nunca a cobertura.
         p = project_search(**BASE, works=works(400), max_chars=1200, max_works=400)
         assert p["coverage"] == BASE["coverage"]
-        assert "scielo: excedeu o tempo limite" in p["limitations"]
+        assert "brasil: excedeu o tempo limite" in p["limitations"]
 
     def test_max_works_is_respected_even_with_room_to_spare(self) -> None:
         p = project_search(**BASE, works=works(100), max_chars=999_999, max_works=25)

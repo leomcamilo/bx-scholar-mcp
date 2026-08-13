@@ -62,6 +62,16 @@ class Paper(BaseModel):
     openalex_id: str = ""
     s2_id: str = ""
     arxiv_id: str = ""
+    # Biomédicos (Europe PMC / PubMed). Aditivos, com default vazio — nenhum
+    # produtor existente precisa mudar. `pmcid` é a chave do texto integral
+    # aberto; sem ele a verificação de uma afirmação cai para o abstract.
+    pmid: str = ""
+    pmcid: str = ""
+    # SciELO: PID nativo, que é a chave do registro autoritativo no ArticleMeta.
+    scielo_pid: str = ""
+    # A fonte declarou ter texto integral disponível? Sinal, não garantia — o
+    # `retrieve_fulltext` confirma ao tentar buscar.
+    has_fulltext: bool = False
 
     # Open Access
     is_open_access: bool = False

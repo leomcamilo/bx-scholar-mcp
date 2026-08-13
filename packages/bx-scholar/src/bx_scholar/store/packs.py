@@ -84,6 +84,9 @@ async def persist_works(works: list[MergedWork]) -> None:
                 s.add(row)
             row.doi = p.doi or None
             row.arxiv_id = p.arxiv_id or None
+            row.pmid = p.pmid or None
+            row.pmcid = p.pmcid or None
+            row.scielo_pid = p.scielo_pid or None
             row.openalex_id = p.openalex_id or None
             row.s2_id = p.s2_id or None
             row.title = p.title or None
@@ -111,7 +114,12 @@ async def persist_works(works: list[MergedWork]) -> None:
                 )
 
 
-async def add_work_items(pack_id: str, works: list[MergedWork], selected_keys: set[str]) -> None:
+async def add_work_items(
+    pack_id: str,
+    works: list[MergedWork],
+    selected_keys: set[str],
+    venue_by_work: dict[str, dict] | None = None,
+) -> None:
     """Grava as obras no pack.
 
     Obras retratadas entram com ``selected=False``: continuam no pack, visíveis
@@ -140,6 +148,10 @@ async def add_work_items(pack_id: str, works: list[MergedWork], selected_keys: s
                         "integrity_status": mw.integrity_status,
                         "seen_in": sorted(mw.seen_in),
                         "source_count": mw.source_count,
+                        "venue_assessment": (venue_by_work or {}).get(mw.work_key),
+                        "venue_tier": ((venue_by_work or {}).get(mw.work_key) or {}).get(
+                            "best_tier"
+                        ),
                     },
                 )
             )

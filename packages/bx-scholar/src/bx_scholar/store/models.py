@@ -276,6 +276,7 @@ class FulltextSpan(Base):
     span_id: Mapped[str] = mapped_column(String(40), primary_key=True)
     doc_id: Mapped[str] = mapped_column(String(40), ForeignKey("fulltext_doc.doc_id"), index=True)
     section: Mapped[str | None] = mapped_column(String(64))
+    section_title: Mapped[str | None] = mapped_column(Text)
     ordinal: Mapped[int] = mapped_column(Integer, default=0)
     page: Mapped[int | None] = mapped_column(Integer)
     char_start: Mapped[int | None] = mapped_column(Integer)

@@ -94,6 +94,8 @@ def _enrich(base: Paper, other: Paper) -> Paper:
 def _key_for(paper: Paper) -> str:
     return work_key(
         doi=paper.doi,
+        pmid=paper.pmid,
+        pmcid=paper.pmcid,
         arxiv_id=paper.arxiv_id,
         openalex_id=paper.openalex_id,
         s2_id=paper.s2_id,

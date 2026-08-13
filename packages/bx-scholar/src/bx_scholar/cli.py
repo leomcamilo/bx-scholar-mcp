@@ -63,6 +63,34 @@ async def _cmd_refresh_integrity(args) -> int:
     return 0
 
 
+async def _cmd_load_rankings(args) -> int:
+    from pathlib import Path
+
+    from bx_scholar.harvest import rankings
+
+    settings = load_settings()
+    db.init_engine(settings.database_url)
+    data_dir = Path(args.data_dir) if args.data_dir else settings.data_dir
+    report = await rankings.load(data_dir)
+    print(
+        json.dumps(
+            {
+                "data_dir": str(data_dir),
+                "sjr_rows": report.sjr_rows,
+                "qualis_rows": report.qualis_rows,
+                "jql_rows": report.jql_rows,
+                "venues": report.venues,
+                "missing": report.missing,
+                "elapsed_s": round(report.elapsed_s, 1),
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+    )
+    await db.dispose()
+    return 0 if report.venues else 1
+
+
 async def _cmd_cache_sweep(_args) -> int:
     from bx_scholar.cache.local import LocalHTTPCache
 
@@ -75,6 +103,7 @@ async def _cmd_cache_sweep(_args) -> int:
 _COMMANDS = {
     "health": _cmd_health,
     "refresh-integrity": _cmd_refresh_integrity,
+    "load-rankings": _cmd_load_rankings,
     "cache-sweep": _cmd_cache_sweep,
 }
 
@@ -82,6 +111,11 @@ _COMMANDS = {
 def main() -> None:
     parser = argparse.ArgumentParser(prog="bx-scholar-admin", description=__doc__)
     parser.add_argument("command", choices=sorted(_COMMANDS))
+    parser.add_argument(
+        "--data-dir",
+        help="diretório com sjr_rankings.csv, qualis_capes.xlsx e jql_rankings.csv "
+        "(load-rankings). Padrão: DATA_DIR.",
+    )
     args = parser.parse_args()
 
     settings_level = "INFO"

@@ -45,3 +45,7 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 
 [Install]
 WantedBy=multi-user.target
+
+# Antes do primeiro start, popular também:
+#   bx-scholar-admin refresh-integrity                      (espelho de retratações)
+#   bx-scholar-admin load-rankings --data-dir <dir>         (SJR/Qualis/JQL)
