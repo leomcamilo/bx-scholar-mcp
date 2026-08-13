@@ -25,7 +25,7 @@ Seções:
 - works: obras selecionadas, paginadas (use offset para avançar).
 - excluded: obras que ficaram FORA da seleção e por quê (retratadas, por exemplo).
 - coverage: só o estado por base — quais foram consultadas com sucesso.
-- claims: AINDA VAZIO — depende de verify_claims, que não existe nesta versão.
+- claims: afirmações verificadas e seus três estados (packs de verify_claims).
 - job: AINDA VAZIO — depende do modo deep, que não existe nesta versão.
 
 Não invente pack_id: use o que veio na resposta anterior."""
@@ -127,10 +127,15 @@ def register(server: FastMCP, settings) -> None:
         if section == "excluded":
             rows = [r for r in rows if not r.selected]
 
-        payload = [
-            {"work_key": r.ref_key, "rank": r.rank, "selected": r.selected, **r.payload}
-            for r in rows
-        ]
+        if section == "claims":
+            # O payload do claim já é o relatório completo; não achatar nem
+            # renomear a chave, senão os três estados se misturam.
+            payload = [{"rank": r.rank, **r.payload} for r in rows]
+        else:
+            payload = [
+                {"work_key": r.ref_key, "rank": r.rank, "selected": r.selected, **r.payload}
+                for r in rows
+            ]
 
         return json.dumps(
             project_pack_page(

@@ -148,7 +148,15 @@ async def _persist(doc: ResolvedDocument, raw_text: str) -> None:
 async def resolve(work: Work, settings, cache) -> ResolvedDocument:
     """Resolve o melhor texto disponível para uma obra."""
     cached = await _cached_document(work.work_key)
-    if cached is not None:
+    # Só reaproveita documento que DE FATO tem texto. Cachear um fracasso é
+    # torná-lo permanente: a obra pode ter ganhado PMCID, virado aberta, ou —
+    # o caso real que expôs isto — o registro pode ter sido enriquecido depois,
+    # e a tentativa anterior ter falhado só por falta de identificador.
+    if cached is not None and cached.access_status in (
+        AccessStatus.OPEN_FULLTEXT,
+        AccessStatus.ABSTRACT_ONLY,
+        AccessStatus.USER_PROVIDED,
+    ):
         sections = await _load_sections(cached.doc_id)
         return ResolvedDocument(
             doc_id=cached.doc_id,

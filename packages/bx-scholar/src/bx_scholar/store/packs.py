@@ -157,6 +157,26 @@ async def add_work_items(
             )
 
 
+async def add_claim_items(pack_id: str, claims: list[dict]) -> None:
+    """Grava as verificações no pack.
+
+    É isto que passa a alimentar `read_pack(section='claims')`, que até agora
+    estava declarado como vazio — um dos achados da auditoria.
+    """
+    async with db.session() as s:
+        for rank, claim in enumerate(claims, start=1):
+            s.add(
+                PackItem(
+                    pack_id=pack_id,
+                    item_type="claim",
+                    ref_key=claim.get("work_key") or claim["claim_id"],
+                    rank=rank,
+                    selected=claim["bibliographic_status"] == "verified",
+                    payload=claim,
+                )
+            )
+
+
 async def finalize_pack(
     pack_id: str,
     *,

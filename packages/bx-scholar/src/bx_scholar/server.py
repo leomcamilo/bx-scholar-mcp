@@ -28,6 +28,7 @@ from bx_scholar.store import db
 from bx_scholar.tools import fulltext as fulltext_tool
 from bx_scholar.tools import pack as pack_tool
 from bx_scholar.tools import search as search_tool
+from bx_scholar.tools import verify as verify_tool
 
 logger = get_logger("bx_scholar.server")
 
@@ -66,11 +67,12 @@ def create_server() -> FastMCP:
     search_tool.register(server, settings, cache)
     pack_tool.register(server, settings)
     fulltext_tool.register(server, settings, cache)
+    verify_tool.register(server, settings, cache)
 
     logger.info(
         "server_ready",
         version=__version__,
-        tools=3,
+        tools=4,
         dialect="postgres" if settings.is_postgres else "sqlite",
         cache_enabled=settings.cache_enabled,
     )
