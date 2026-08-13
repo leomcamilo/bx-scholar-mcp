@@ -1,0 +1,47 @@
+# BX-Scholar v2 — servidor MCP em 127.0.0.1:8099.
+#
+# Porta NOVA de propósito: bx-scholar-core (:8097) e bx-scholar-workflow (:8098)
+# seguem servindo o v1 intactos. Produção e preview compartilham o mesmo serviço
+# scholar, então mudar a superfície de tools no :8097 atingiria produção na hora
+# — daí a instância paralela, que o preview passa a consumir primeiro.
+#
+# Instalar:
+#   cp bx-scholar-v2.service /etc/systemd/system/
+#   systemctl daemon-reload && systemctl enable --now bx-scholar-v2
+#
+# Antes do primeiro start:
+#   BX_SCHOLAR_DATABASE_URL=... .venv/bin/alembic upgrade head   (em packages/bx-scholar)
+
+[Unit]
+Description=BX-Scholar v2 MCP (evidence packs) — streamable-http em 127.0.0.1:8099
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/bx-scholar-v2/packages/bx-scholar
+EnvironmentFile=/etc/bx-scholar.env
+Environment=BX_SCHOLAR_PORT=8099
+Environment=CACHE_DIR=/root/.cache/bx-scholar/v2
+# Vazio => SQLite em ~/.local/share/bx-scholar/bx_scholar.db.
+# Para Postgres: postgresql+asyncpg://bx_scholar:...@127.0.0.1/bx_scholar
+Environment=BX_SCHOLAR_DATABASE_URL=
+ExecStart=/root/bx-scholar-v2/.venv/bin/bx-scholar-v2
+Restart=always
+RestartSec=3
+
+# Mesmo sandbox do v1. ReadWritePaths cobre o cache E o diretório do store —
+# sem o segundo, o SQLite não consegue nem abrir o arquivo.
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/root/.cache/bx-scholar /root/.local/share/bx-scholar
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

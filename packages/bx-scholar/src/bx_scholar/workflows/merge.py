@@ -38,6 +38,10 @@ class MergedWork:
     paper: Paper
     seen_in: dict[str, int] = field(default_factory=dict)  # fonte -> epoch
     integrity_status: str = "unknown"
+    #: Melhor (menor) posição que a obra ocupou no ranking de alguma fonte. A
+    #: ordenação do upstream é informação sobre relevância e não pode ser
+    #: descartada — ver `rank_works`.
+    best_position: int = 10_000
 
     @property
     def source_count(self) -> int:
@@ -106,12 +110,12 @@ def merge_results(results: list[SourceResult]) -> tuple[list[MergedWork], int]:
     O(n²) do v1 realmente doía, mas agora sobre um conjunto muito menor.
     """
     by_key: dict[str, MergedWork] = {}
-    keyless: list[tuple[Paper, str, int]] = []
+    keyless: list[tuple[Paper, str, int, int]] = []
     raw_count = 0
     ts = int(time.time())  # momento da recuperação — a proveniência que o v1 não tinha
 
     for res in results:
-        for paper in res.papers:
+        for position, paper in enumerate(res.papers):
             raw_count += 1
             # Normaliza na entrada: o resto do sistema pode confiar nos campos.
             paper.doi = normalize_doi(paper.doi)
@@ -121,7 +125,7 @@ def merge_results(results: list[SourceResult]) -> tuple[list[MergedWork], int]:
             if not key:
                 continue
             if key.startswith("title:"):
-                keyless.append((paper, res.name, ts))
+                keyless.append((paper, res.name, ts, position))
                 continue
 
             if key in by_key:
@@ -131,11 +135,14 @@ def merge_results(results: list[SourceResult]) -> tuple[list[MergedWork], int]:
                 else:
                     existing.paper = _enrich(existing.paper, paper)
                 existing.seen_in.setdefault(res.name, ts)
+                existing.best_position = min(existing.best_position, position)
             else:
-                by_key[key] = MergedWork(work_key=key, paper=paper, seen_in={res.name: ts})
+                by_key[key] = MergedWork(
+                    work_key=key, paper=paper, seen_in={res.name: ts}, best_position=position
+                )
 
     # Segundo passe: obras sem identificador, casadas por título + ano.
-    for paper, source, ts in keyless:
+    for paper, source, ts, position in keyless:
         title = normalize_title(paper.title)
         if not title:
             continue
@@ -149,27 +156,38 @@ def merge_results(results: list[SourceResult]) -> tuple[list[MergedWork], int]:
         if matched is not None:
             matched.paper = _enrich(matched.paper, paper)
             matched.seen_in.setdefault(source, ts)
+            matched.best_position = min(matched.best_position, position)
         else:
             key = _key_for(paper)
-            by_key[key] = MergedWork(work_key=key, paper=paper, seen_in={source: ts})
+            by_key[key] = MergedWork(
+                work_key=key, paper=paper, seen_in={source: ts}, best_position=position
+            )
 
     merged = list(by_key.values())
     return merged, raw_count - len(merged)
 
 
-def rank_works(works: list[MergedWork], *, year_from: int | None = None) -> list[MergedWork]:
-    """Ordena por um sinal composto simples e explicável.
+#: Quantas posições cada fonte adicional "sobe" uma obra. Baixo de propósito:
+#: convergência é um bônus, não um substituto da relevância.
+_CONVERGENCE_BOOST = 2
 
-    Deliberadamente **não** é um score opaco: convergência de fontes
-    independentes primeiro, citações depois, recência por último. Qualquer
-    ordenação aqui é heurística de apresentação, não julgamento de qualidade —
-    e a projeção deixa isso claro para o modelo.
+
+def rank_works(works: list[MergedWork]) -> list[MergedWork]:
+    """Ordena preservando a relevância do upstream, com bônus por convergência.
+
+    A ordenação das bases **é** informação: o OpenAlex já devolve por relevância
+    para a consulta. Reordenar por citações, como uma primeira versão deste
+    módulo fazia, joga isso fora e faz emergir o artigo velho e muito citado em
+    vez do artigo sobre o tema perguntado — foi exatamente o que apareceu no
+    primeiro smoke contra a API real.
+
+    Então: posição de origem manda, cada fonte independente adicional vale
+    algumas posições, e citação só desempata. Nada disso é julgamento de
+    qualidade — é heurística de apresentação, e a projeção diz isso ao modelo.
     """
+
     def sort_key(w: MergedWork) -> tuple:
-        return (
-            -w.source_count,
-            -(w.paper.cited_by_count or 0),
-            -(w.paper.year or 0),
-        )
+        effective = w.best_position - _CONVERGENCE_BOOST * (w.source_count - 1)
+        return (effective, -(w.paper.cited_by_count or 0), -(w.paper.year or 0))
 
     return sorted(works, key=sort_key)

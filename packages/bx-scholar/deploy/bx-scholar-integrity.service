@@ -1,0 +1,27 @@
+# Atualiza o espelho local do Retraction Watch (CC0, via Crossref).
+#
+# Sem este timer o gate de integridade fica cego — e, por desenho, cego não
+# significa "limpo": `workflows/integrity` marca tudo como `unknown` e diz isso
+# na resposta. É a diferença entre "não verificamos" e "verificamos e está ok".
+#
+# Falha aqui deve ser VISÍVEL: o CLI sai com código != 0 para o systemd marcar a
+# unidade como failed, em vez de deixar o espelho envelhecer em silêncio.
+
+[Unit]
+Description=BX-Scholar — refresh do espelho de retratações (Retraction Watch)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/bx-scholar-v2/packages/bx-scholar
+EnvironmentFile=/etc/bx-scholar.env
+Environment=BX_SCHOLAR_DATABASE_URL=
+ExecStart=/root/bx-scholar-v2/.venv/bin/bx-scholar-admin refresh-integrity
+TimeoutStartSec=900
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/root/.cache/bx-scholar /root/.local/share/bx-scholar
+PrivateTmp=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6

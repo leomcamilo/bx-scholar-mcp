@@ -80,6 +80,15 @@ def build_connectors(settings, cache, names: list[str]) -> list[Connector]:
                     year_to=req.year_to,
                     journal_issn=req.venue_issn,
                     per_page=req.limit,
+                    # O core tem `sort="cited_by_count:desc"` como PADRÃO
+                    # (clients/openalex.py:101) — a busca acadêmica principal
+                    # ordenando por citação em vez de relevância. Na prática
+                    # isso devolve o artigo mais citado que casa vagamente com
+                    # os termos, não o artigo sobre o tema perguntado: uma busca
+                    # por "mobilidade urbana preditiva" traz indústria 4.0 de
+                    # 2018. Aqui pedimos relevância explicitamente; o padrão do
+                    # core não é tocado para não alterar o v1 em produção.
+                    sort="relevance_score:desc",
                 )
 
         elif name == "crossref":

@@ -1,0 +1,15 @@
+# Diário. O dataset da Crossref é atualizado a cada dia útil; um refresh por dia
+# mantém a defasagem abaixo de 24h, que é o horizonte em que uma retratação
+# recém-publicada ainda pode ser citada sem sinalização.
+
+[Unit]
+Description=Refresh diário do espelho de retratações do BX-Scholar
+
+[Timer]
+OnCalendar=*-*-* 04:30:00
+# A VPS nem sempre está de pé às 04:30; sem isto, um reboot pula o dia inteiro.
+Persistent=true
+RandomizedDelaySec=900
+
+[Install]
+WantedBy=timers.target

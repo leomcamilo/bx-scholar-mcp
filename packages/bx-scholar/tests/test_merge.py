@@ -80,16 +80,54 @@ class TestDeduplication:
 
 
 class TestRanking:
-    def test_source_convergence_outranks_citations(self) -> None:
-        # Convergência de fontes independentes é o sinal mais barato e mais
-        # honesto de que a obra existe e é indexada de fato.
-        one_source = make_paper("Muito citado", doi="10.1/a", cited_by=5000)
+    def test_upstream_relevance_order_is_preserved_with_one_source(self) -> None:
+        # O OpenAlex já devolve por relevância para a consulta. Reordenar por
+        # citações destrói isso e faz emergir o artigo velho e muito citado em
+        # vez do artigo sobre o tema perguntado — foi o que apareceu no primeiro
+        # smoke contra a API real.
         merged, _ = merge_results(
             results(
-                openalex=[one_source, make_paper("Convergente", doi="10.1/b", cited_by=10)],
-                crossref=[make_paper("Convergente", doi="10.1/b", cited_by=10)],
-                scielo=[make_paper("Convergente", doi="10.1/b", cited_by=10)],
+                openalex=[
+                    make_paper("O mais relevante", doi="10.1/a", cited_by=3),
+                    make_paper("Velho e muito citado", doi="10.1/b", cited_by=5000),
+                ]
             )
         )
         ranked = rank_works(merged)
-        assert ranked[0].paper.title == "Convergente"
+        assert [w.paper.title for w in ranked] == ["O mais relevante", "Velho e muito citado"]
+
+    def test_top_hit_in_a_smaller_base_counts(self) -> None:
+        # `best_position` é o melhor posto em QUALQUER base. Uma obra que é a
+        # primeira do SciELO e a quinta do OpenAlex sobe — para um produto com
+        # foco brasileiro isso é recurso, não defeito: a base pequena e
+        # especializada tem opinião melhor sobre o corpus dela.
+        merged, _ = merge_results(
+            results(
+                openalex=[make_paper(f"R{i}", doi=f"10.1/{i}") for i in range(6)],
+                scielo=[make_paper("R4", doi="10.1/4")],
+            )
+        )
+        assert rank_works(merged)[0].paper.title == "R4"
+
+    def test_boost_is_bounded_and_cannot_leapfrog_from_the_bottom(self) -> None:
+        # Obra mal ranqueada em TODAS as bases não é teleportada ao topo por
+        # convergência. O bônus é de algumas posições, não um veto.
+        def deep():  # listas independentes: o merge muta os Paper
+            return [make_paper(f"R{i}", doi=f"10.1/{i}") for i in range(25)]
+
+        # R20 está em vigésimo lugar nas TRÊS bases — convergente, mas mal
+        # ranqueado em todas elas.
+        merged, _ = merge_results(results(openalex=deep(), crossref=deep(), scielo=deep()))
+        ranked = [w.paper.title for w in rank_works(merged)]
+        assert ranked[0] == "R0"
+        assert ranked.index("R20") > 10
+
+    def test_citations_only_break_ties(self) -> None:
+        merged, _ = merge_results(
+            results(
+                openalex=[make_paper("A", doi="10.1/a", cited_by=10)],
+                crossref=[make_paper("B", doi="10.1/b", cited_by=900)],
+            )
+        )
+        # Ambas em posição 0 na sua fonte, ambas com 1 fonte -> desempata citação.
+        assert rank_works(merged)[0].paper.title == "B"

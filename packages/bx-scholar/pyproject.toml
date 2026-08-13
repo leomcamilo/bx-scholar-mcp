@@ -57,7 +57,11 @@ dev = [
 ]
 
 [project.scripts]
-bx-scholar = "bx_scholar.server:main"
+# `bx-scholar` (sem sufixo) ainda pertence ao monólito legado `run_server.py`
+# declarado no pyproject da raiz. Enquanto os dois coexistem, o v2 usa o nome
+# sufixado — igual ao da unidade systemd. A F7 aposenta o legado e o nome curto
+# passa para cá.
+bx-scholar-v2 = "bx_scholar.server:main"
 bx-scholar-admin = "bx_scholar.cli:main"
 
 [project.urls]
