@@ -100,6 +100,24 @@ async def healthcheck() -> dict:
     return {"dialect": engine.dialect.name, "url": str(engine.url.render_as_string(hide_password=True))}
 
 
+async def dispose_pool() -> None:
+    """Fecha as conexões do pool SEM descartar o engine.
+
+    Necessário porque o healthcheck de startup roda num ``asyncio.run()``
+    próprio, que morre antes de o uvicorn criar o loop definitivo. O asyncpg
+    prende cada conexão ao loop em que ela nasceu; sem este descarte, a primeira
+    coisa no journal depois de subir é ``RuntimeError: Event loop is closed``,
+    vindo do coletor tentando fechar conexões de um loop que não existe mais.
+
+    Com aiosqlite o problema não aparecia — foi o Postgres que o expôs.
+
+    O engine continua utilizável: o SQLAlchemy recria o pool sob demanda, já no
+    loop certo.
+    """
+    if _engine is not None:
+        await _engine.dispose()
+
+
 async def dispose() -> None:
     global _engine, _sessionmaker
     if _engine is not None:

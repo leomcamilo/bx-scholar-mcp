@@ -33,10 +33,16 @@ logger = get_logger("bx_scholar.server")
 
 
 async def _bootstrap(settings) -> None:
-    """Sobe o store e limpa cache vencido antes de aceitar tráfego."""
+    """Confere o store antes de aceitar tráfego. Falha aqui = serviço não sobe.
+
+    Roda no próprio ``asyncio.run()``, então o pool aberto pelo healthcheck é
+    descartado ao final: o asyncpg prende conexões ao loop em que nasceram, e o
+    uvicorn vai criar outro loop logo em seguida. Ver ``db.dispose_pool``.
+    """
     db.init_engine(settings.database_url)
     health = await db.healthcheck()
     logger.info("store_ready", **health)
+    await db.dispose_pool()
 
 
 def create_server() -> FastMCP:

@@ -3,38 +3,45 @@
 # Porta NOVA de propósito: bx-scholar-core (:8097) e bx-scholar-workflow (:8098)
 # seguem servindo o v1 intactos. Produção e preview compartilham o mesmo serviço
 # scholar, então mudar a superfície de tools no :8097 atingiria produção na hora
-# — daí a instância paralela, que o preview passa a consumir primeiro.
+# — daí a instância paralela, que o preview consome primeiro.
 #
 # Instalar:
 #   cp bx-scholar-v2.service /etc/systemd/system/
 #   systemctl daemon-reload && systemctl enable --now bx-scholar-v2
 #
 # Antes do primeiro start:
-#   BX_SCHOLAR_DATABASE_URL=... .venv/bin/alembic upgrade head   (em packages/bx-scholar)
+#   alembic upgrade head                                (schema)
+#   bx-scholar-admin refresh-integrity                  (espelho de retratações)
+#   bx-scholar-admin load-rankings --data-dir <dir>     (SJR/Qualis/JQL)
 
 [Unit]
 Description=BX-Scholar v2 MCP (evidence packs) — streamable-http em 127.0.0.1:8099
-After=network-online.target
+After=network-online.target postgresql.service
 Wants=network-online.target
+# O store é Postgres; sem ele o serviço não sobe. Diferente do v1, que não tem
+# dependência de daemon nenhum.
+Requires=postgresql.service
 
 [Service]
 Type=simple
 WorkingDirectory=/root/bx-scholar-v2/packages/bx-scholar
+# Compartilhado com o v1: BX_SCHOLAR_TOKEN, POLITE_EMAIL, BX_SCHOLAR_TRANSPORT.
 EnvironmentFile=/etc/bx-scholar.env
+# Próprio: BX_SCHOLAR_DATABASE_URL. Arquivo separado de propósito — o
+# /etc/bx-scholar.env é lido também pelo v1 e, via drop-in, pelo bxat-webui.
+# Vem DEPOIS para que a URL do v2 vença qualquer valor herdado.
+EnvironmentFile=/etc/bx-scholar-v2.env
 Environment=BX_SCHOLAR_PORT=8099
 Environment=CACHE_DIR=/root/.cache/bx-scholar/v2
-# Vazio => SQLite em ~/.local/share/bx-scholar/bx_scholar.db.
-# Para Postgres: postgresql+asyncpg://bx_scholar:...@127.0.0.1/bx_scholar
-Environment=BX_SCHOLAR_DATABASE_URL=
 ExecStart=/root/bx-scholar-v2/.venv/bin/bx-scholar-v2
 Restart=always
 RestartSec=3
 
-# Mesmo sandbox do v1. ReadWritePaths cobre o cache E o diretório do store —
-# sem o segundo, o SQLite não consegue nem abrir o arquivo.
+# Mesmo sandbox do v1. Só o diretório de cache precisa de escrita — o store é
+# Postgres via socket TCP, não arquivo.
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=/root/.cache/bx-scholar /root/.local/share/bx-scholar
+ReadWritePaths=/root/.cache/bx-scholar
 PrivateTmp=true
 ProtectControlGroups=true
 ProtectKernelTunables=true
@@ -45,7 +52,3 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 
 [Install]
 WantedBy=multi-user.target
-
-# Antes do primeiro start, popular também:
-#   bx-scholar-admin refresh-integrity                      (espelho de retratações)
-#   bx-scholar-admin load-rankings --data-dir <dir>         (SJR/Qualis/JQL)
