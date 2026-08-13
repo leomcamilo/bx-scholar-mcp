@@ -98,7 +98,14 @@ class OpenAlexClient(AsyncHTTPClient):
         year_to: int | None = None,
         journal_issn: str | None = None,
         type_filter: str | None = None,
-        sort: str = "cited_by_count:desc",
+        # 2026-08-13: era "cited_by_count:desc". A busca acadêmica principal
+        # ordenava por CITAÇÃO, não por relevância — devolvia o artigo mais
+        # citado que casasse vagamente com os termos, não o artigo sobre o tema
+        # perguntado. Medido: "mobilidade urbana preditiva" trazia indústria 4.0
+        # de 2018; com relevância, traz "Jornadas Futuras para a Mobilidade
+        # Urbana em Cidades Inteligentes". Quem quiser ordenar por impacto ainda
+        # pode passar sort= explicitamente.
+        sort: str = "relevance_score:desc",
         per_page: int = 25,
     ) -> tuple[list[Paper], int]:
         """Search for papers. Returns (papers, total_count)."""

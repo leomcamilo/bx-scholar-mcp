@@ -1,23 +1,48 @@
-"""SciELO client — Brazilian/LATAM Open Access papers.
+"""Brazilian/lusophone Open Access papers, via OpenAlex.
 
-Uses OpenAlex with SciELO publisher filter as primary strategy,
-with direct SciELO search API as fallback.
+2026-08-13 — este cliente estava devolvendo lista vazia, sempre, em silêncio.
+Os dois caminhos que ele tinha morreram:
+
+- ``host_venue.publisher:SciELO``: o OpenAlex responde ``"host_venue and
+  alternate_host_venues are deprecated in favor of locations"`` — erro, não
+  resultado vazio. Cai no fallback.
+- ``search.scielo.org``: responde **403** com HTML. O fallback checa
+  ``content-type: application/json`` e devolve ``[]``.
+
+Resultado: zero resultados desde a aposentadoria do campo no OpenAlex, sem
+nenhum sinal — e nenhum teste cobria este arquivo.
+
+Por que ``language:pt`` e não o filtro de publisher consertado: o SciELO como
+publisher no OpenAlex cobre 41 mil obras e devolve **63** resultados para
+"mobilidade urbana"; ``language:pt`` devolve **62.176**. O eixo de cobertura
+lusófona é o idioma, não a etiqueta de publisher. O SciELO não publica API
+aberta de busca por palavra-chave, então não há um "SciELO de verdade" a
+chamar aqui.
+
+O nome da classe é mantido por compatibilidade — ``tools/search.py`` e as
+allowlists de agente referenciam a fonte como ``scielo``.
 """
 
 from __future__ import annotations
 
 from bx_scholar_core.clients.base import AsyncHTTPClient, NonRetryableHTTPError
 from bx_scholar_core.clients.openalex import _parse_work
+from bx_scholar_core.logging import get_logger
 from bx_scholar_core.models.paper import Author, Paper
+
+logger = get_logger(__name__)
 
 SCIELO_SEARCH = "https://search.scielo.org/"
 
 
 class SciELOClient(AsyncHTTPClient):
-    """Client for SciELO via OpenAlex filter.
+    """Busca de produção em português via OpenAlex.
 
     Rate limit: 5 req/s.
-    All SciELO papers are Open Access.
+
+    NÃO assuma acesso aberto: a premissa "todo artigo do SciELO é aberto"
+    valia para o filtro de publisher e deixou de valer com o filtro de idioma.
+    O estado de acesso vem do registro, obra a obra.
     """
 
     base_url = ""
@@ -36,8 +61,8 @@ class SciELOClient(AsyncHTTPClient):
         year_to: int | None = None,
         max_results: int = 20,
     ) -> list[Paper]:
-        """Search SciELO papers via OpenAlex SciELO filter."""
-        oa_filter = "host_venue.publisher:SciELO"
+        """Busca produção lusófona via OpenAlex."""
+        oa_filter = "language:pt"
         if year_from:
             oa_filter += f",publication_year:>{year_from - 1}"
         if year_to:
@@ -49,6 +74,10 @@ class SciELOClient(AsyncHTTPClient):
                 params={
                     "search": query,
                     "filter": oa_filter,
+                    # Relevância explícita: sem isto o resultado depende do
+                    # default do endpoint, e a busca acadêmica não pode ficar
+                    # à mercê disso.
+                    "sort": "relevance_score:desc",
                     "per_page": min(max_results, 50),
                     "mailto": self._polite_email,
                 },
@@ -58,18 +87,34 @@ class SciELOClient(AsyncHTTPClient):
             papers: list[Paper] = []
             for work in data.get("results", []):
                 p = _parse_work(work)
-                p.source_api = "scielo_via_openalex"
-                p.is_open_access = True
-                oa_url = (work.get("open_access") or {}).get("oa_url")
-                if oa_url:
+                p.source_api = "openalex_pt"
+                # ANTES: `p.is_open_access = True` para TODO resultado. Era
+                # verdade sob a premissa "tudo que está no SciELO é aberto" —
+                # premissa que morreu junto com o filtro de publisher. Com
+                # `language:pt` a maioria dos resultados NÃO é aberta, e marcar
+                # tudo como aberto é afirmar ao usuário que ele consegue ler o
+                # artigo. O dado real vem do próprio registro.
+                oa = work.get("open_access") or {}
+                p.is_open_access = bool(oa.get("is_oa"))
+                if oa_url := oa.get("oa_url"):
                     p.pdf_url = oa_url
                 papers.append(p)
             return papers
         except (NonRetryableHTTPError, Exception):
-            return await self._search_direct(query, max_results)
+            # O fallback `search.scielo.org` responde 403 e o parser devolvia
+            # lista vazia — falha virava "não há nada". Devolver vazio aqui
+            # continua sendo o contrato desta função (tools/search.py usa
+            # gather(return_exceptions=True)), mas sem fingir que houve
+            # segunda tentativa.
+            logger.warning("busca_pt_falhou", query=query[:80])
+            return []
 
     async def _search_direct(self, query: str, max_results: int) -> list[Paper]:
-        """Fallback: search SciELO directly."""
+        """MORTO — ``search.scielo.org`` responde 403 com HTML desde (ao menos)
+        2026-08. Sem chamador desde este commit; mantido só para registro do que
+        foi tentado. Não religar sem antes confirmar que o endpoint voltou a
+        aceitar requisição automatizada.
+        """
         try:
             resp = await self.get(
                 SCIELO_SEARCH,
