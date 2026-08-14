@@ -115,8 +115,49 @@ async def replace_all(rows: list[dict]) -> int:
                     updated_at=now,
                 )
             )
+    invalidate_name_index()
     logger.info("venues_replaced", count=len(rows))
     return len(rows)
+
+
+# Índice `name_norm -> id` em memória de processo. A tabela `venue` só muda
+# quando `load-rankings` roda (recarga em bloco), então a chave de invalidação é
+# barata: quantas linhas e quando foi a última atualização. Duas queries
+# agregadas contra uma leitura de 46.818 linhas.
+#
+# Cache em processo e não índice `pg_trgm` de propósito: mantém a promessa de
+# funcionar igual em SQLite e Postgres. Se um dia não bastar, o trgm entra como
+# caminho rápido opcional, sem substituir este.
+_NAME_INDEX: dict[str, int] | None = None
+_NAME_INDEX_KEY: tuple[int, int] | None = None
+
+
+async def _index_key(s) -> tuple[int, int]:
+    row = (
+        await s.execute(select(func.count(), func.coalesce(func.max(Venue.updated_at), 0)))
+    ).one()
+    return int(row[0]), int(row[1])
+
+
+async def _name_index(s) -> dict[str, int]:
+    global _NAME_INDEX, _NAME_INDEX_KEY
+
+    key = await _index_key(s)
+    if _NAME_INDEX is not None and _NAME_INDEX_KEY == key:
+        return _NAME_INDEX
+
+    rows = (await s.execute(select(Venue.id, Venue.name_norm))).all()
+    _NAME_INDEX = {norm: vid for vid, norm in rows if norm}
+    _NAME_INDEX_KEY = key
+    logger.info("venue_name_index_built", entries=len(_NAME_INDEX), rows=key[0])
+    return _NAME_INDEX
+
+
+def invalidate_name_index() -> None:
+    """Descarta o índice. Chamado pela recarga de rankings."""
+    global _NAME_INDEX, _NAME_INDEX_KEY
+    _NAME_INDEX = None
+    _NAME_INDEX_KEY = None
 
 
 async def count() -> int:
@@ -147,18 +188,11 @@ async def lookup(issns: list[str], names: list[str]) -> dict[str, VenueAssessmen
         if not unresolved:
             return result
 
-        # CUSTO REAL, sem eufemismo: isto lê os 46.818 name_norm da tabela a
-        # cada busca que tenha ao menos um veículo não resolvido por ISSN, e o
-        # `extractOne` compara contra todos eles, por nome não resolvido. É
-        # melhor que o v1 (que varria DOIS índices em memória a cada miss) mas
-        # NÃO é barato, e vira leitura de tabela inteira no Postgres.
-        #
-        # Só não é gargalo hoje porque a maioria das obras traz ISSN e sai na
-        # primeira etapa. Quando incomodar, as saídas são cache do catálogo em
-        # processo (invalidado pelo load-rankings) ou índice pg_trgm — nesta
-        # ordem, porque a primeira é portátil.
-        catalogue = (await s.execute(select(Venue.id, Venue.name_norm))).all()
-        index = {norm: vid for vid, norm in catalogue if norm}
+        # O índice de nomes é lido UMA vez por processo, não a cada busca.
+        # Antes, toda busca com um veículo não resolvido por ISSN fazia
+        # `select(id, name_norm)` sem WHERE — 46.818 linhas, leitura de tabela
+        # inteira no Postgres — e comparava contra todas elas.
+        index = await _name_index(s)
 
         matches: dict[str, int] = {}
         for name in unresolved:

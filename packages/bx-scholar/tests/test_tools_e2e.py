@@ -233,3 +233,58 @@ class TestPersistence:
         assert n == 3
         # 4 linhas de proveniência: 'a' foi vista por openalex E crossref.
         assert nsrc == 4
+
+
+class TestExcludedPagination:
+    """A seção `excluded` filtrava em Python DEPOIS do LIMIT do banco.
+
+    Com mais obras selecionadas do que o `limit`, a página voltava vazia e o
+    modelo concluía que nada tinha sido excluído — falsa impressão, que é o
+    modo de falha que o produto inteiro existe para evitar. O teste anterior
+    passava por sorte: o fixture tinha 3 obras e a retratada cabia na página.
+    """
+
+    @pytest.fixture
+    def big_server(self, settings, monkeypatch):
+        from conftest import make_paper, stub_connector
+
+        # 30 obras limpas + 1 retratada no fim.
+        works = [make_paper(f"Obra limpa {i}", doi=f"10.1/ok{i}") for i in range(30)]
+        works.append(make_paper("Artigo retratado", doi="10.1/ret"))
+
+        monkeypatch.setattr(
+            search_tool, "build_connectors",
+            lambda _s, _c, names: [stub_connector("openalex", works)],
+        )
+        srv = FastMCP("test")
+        search_tool.register(srv, settings, cache=None)
+        pack_tool.register(srv, settings)
+        return srv
+
+    async def test_excluded_is_found_even_beyond_the_first_page(
+        self, big_server, store
+    ) -> None:
+        async with db.session() as s:
+            s.add(Integrity(doi="10.1/ret", status="retracted"))
+
+        out = await call(big_server, "search_literature", query="x", limit=31)
+        assert out["counts"]["retracted_excluded"] == 1
+
+        excluded = await call(
+            big_server, "read_pack", pack_id=out["pack_id"], section="excluded", limit=10
+        )
+        assert excluded["total"] == 1, "total deve contar só as excluídas"
+        assert excluded["returned"] == 1
+        assert excluded["items"][0]["work_key"] == "doi:10.1/ret"
+
+    async def test_works_section_counts_only_selected(self, big_server, store) -> None:
+        async with db.session() as s:
+            s.add(Integrity(doi="10.1/ret", status="retracted"))
+
+        out = await call(big_server, "search_literature", query="x", limit=31)
+        works = await call(
+            big_server, "read_pack", pack_id=out["pack_id"], section="works", limit=5
+        )
+        assert works["total"] == 30  # 31 menos a retratada
+        assert works["returned"] == 5
+        assert works["next_offset"] == 5

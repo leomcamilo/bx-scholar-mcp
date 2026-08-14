@@ -91,6 +91,27 @@ async def _cmd_load_rankings(args) -> int:
     return 0 if report.venues else 1
 
 
+async def _cmd_prune(args) -> int:
+    from bx_scholar.store import retention
+
+    settings = load_settings()
+    db.init_engine(settings.database_url)
+    report = await retention.prune(days=args.days, dry_run=args.dry_run)
+    print(json.dumps({**report.as_dict(), "usage_after": await retention.usage()}, indent=2))
+    await db.dispose()
+    return 0
+
+
+async def _cmd_usage(_args) -> int:
+    from bx_scholar.store import retention
+
+    settings = load_settings()
+    db.init_engine(settings.database_url)
+    print(json.dumps(await retention.usage(), indent=2))
+    await db.dispose()
+    return 0
+
+
 async def _cmd_cache_sweep(_args) -> int:
     from bx_scholar.cache.local import LocalHTTPCache
 
@@ -104,6 +125,8 @@ _COMMANDS = {
     "health": _cmd_health,
     "refresh-integrity": _cmd_refresh_integrity,
     "load-rankings": _cmd_load_rankings,
+    "prune": _cmd_prune,
+    "usage": _cmd_usage,
     "cache-sweep": _cmd_cache_sweep,
 }
 
@@ -115,6 +138,13 @@ def main() -> None:
         "--data-dir",
         help="diretório com sjr_rankings.csv, qualis_capes.xlsx e jql_rankings.csv "
         "(load-rankings). Padrão: DATA_DIR.",
+    )
+    parser.add_argument(
+        "--days", type=int, default=90,
+        help="prune: idade mínima, em dias, de um pack para ser apagado (padrão 90).",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="prune: só relata o que sairia.",
     )
     args = parser.parse_args()
 

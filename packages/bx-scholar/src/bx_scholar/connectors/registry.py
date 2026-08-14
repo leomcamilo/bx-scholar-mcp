@@ -47,6 +47,30 @@ class Connector:
     essential: bool = False
 
 
+def _within_year_range(
+    papers: list[Paper], year_from: int | None, year_to: int | None
+) -> list[Paper]:
+    """Aplica o recorte de ano para fontes que não filtram na API.
+
+    Obra sem ano declarado é MANTIDA: descartá-la trocaria um erro visível
+    (resultado fora da faixa) por um invisível (obra pertinente sumindo porque
+    a base não informou o ano).
+    """
+    if not year_from and not year_to:
+        return papers
+    out = []
+    for p in papers:
+        if p.year is None:
+            out.append(p)
+            continue
+        if year_from and p.year < year_from:
+            continue
+        if year_to and p.year > year_to:
+            continue
+        out.append(p)
+    return out
+
+
 def _year_range_string(req: SearchRequest) -> str | None:
     if req.year_from and req.year_to:
         return f"{req.year_from}-{req.year_to}"
@@ -105,12 +129,14 @@ def build_connectors(settings, cache, names: list[str]) -> list[Connector]:
             client = ArXivClient(ua, cache=cache, profile=prof)
 
             async def _search(req: SearchRequest, c=client) -> tuple[list[Paper], int]:
-                # O ArXiv não filtra por ano na API e NADA filtra depois: um
-                # recorte de ano pedido pelo usuário é ignorado por esta fonte.
-                # Só aparece no modo deep, que hoje não roda — quando F5 entrar,
-                # ou se filtra aqui ou vira nota em `limitations`.
+                # A API do arXiv não filtra por ano. Antes, nada filtrava depois
+                # tampouco: um pedido de 2020-2024 devolvia qualquer ano, sem
+                # aviso. O recorte é aplicado aqui, e o descarte fica visível no
+                # total reportado — omitir seria o mesmo silêncio que o bloco
+                # `coverage` existe para evitar.
                 papers, total = await c.search(req.query, max_results=req.limit)
-                return papers, total
+                kept = _within_year_range(papers, req.year_from, req.year_to)
+                return kept, total
 
         elif name == "brasil":
             client = BrasilClient(settings.polite_email, ua, cache=cache, profile=prof)

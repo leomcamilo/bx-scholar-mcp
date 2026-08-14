@@ -61,7 +61,11 @@ class Work(Base):
 
     __tablename__ = "work"
 
-    work_key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    # 255 e não 128: `work_key` é "doi:" + DOI, e o Postgres RECUSA o excesso
+    # enquanto o SQLite aceita calado — divergência que só apareceria em
+    # produção. Medido nos 62.625 DOIs reais do espelho de retratações, o mais
+    # longo tem 68 caracteres, então é folga, não necessidade atual.
+    work_key: Mapped[str] = mapped_column(String(255), primary_key=True)
 
     doi: Mapped[str | None] = mapped_column(String(255), index=True)
     pmid: Mapped[str | None] = mapped_column(String(32), index=True)
@@ -114,7 +118,7 @@ class WorkSource(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    work_key: Mapped[str] = mapped_column(String(128), ForeignKey("work.work_key"), index=True)
+    work_key: Mapped[str] = mapped_column(String(255), ForeignKey("work.work_key"), index=True)
     source: Mapped[str] = mapped_column(String(32))
     source_id: Mapped[str | None] = mapped_column(String(255))
     record_url: Mapped[str | None] = mapped_column(Text)

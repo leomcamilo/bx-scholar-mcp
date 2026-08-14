@@ -1,0 +1,10 @@
+[Unit]
+Description=Expurgo semanal do store do BX-Scholar
+
+[Timer]
+OnCalendar=Sun 05:00:00
+Persistent=true
+RandomizedDelaySec=1800
+
+[Install]
+WantedBy=timers.target

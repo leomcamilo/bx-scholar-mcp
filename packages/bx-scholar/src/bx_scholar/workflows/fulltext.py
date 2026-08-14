@@ -261,30 +261,28 @@ async def resolve(work: Work, settings, cache) -> ResolvedDocument:
 
 
 async def _fetch_pdf_text(url: str, settings) -> str | None:
-    """Baixa e extrai um PDF aberto. Falha vira ``None``, nunca exceção."""
-    import httpx
+    """Baixa e extrai um PDF aberto. Falha vira ``None``, nunca exceção.
 
-    try:
-        async with httpx.AsyncClient(
-            timeout=60.0, follow_redirects=True, headers={"User-Agent": settings.user_agent}
-        ) as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-            content = resp.content
-    except Exception as exc:  # noqa: BLE001
-        logger.info("pdf_fetch_failed", url=url[:120], error=type(exc).__name__)
-        return None
+    A URL vem de dado externo (``oa_url`` do OpenAlex, ``pdf_url`` do Unpaywall),
+    então o download passa por ``net.fetch_limited``: só http/https, host
+    resolvido e recusado se apontar para rede interna, redirecionamento
+    revalidado a cada salto, e teto de bytes aplicado DURANTE o stream.
+    """
+    from bx_scholar.workflows.net import fetch_limited
 
-    if len(content) > MAX_PDF_BYTES:
-        logger.info("pdf_too_large", url=url[:120], bytes=len(content))
+    fetched = await fetch_limited(
+        url, max_bytes=MAX_PDF_BYTES, timeout=60.0, user_agent=settings.user_agent
+    )
+    if fetched is None:
         return None
-    if not content.startswith(b"%PDF"):
+    if not fetched.content.startswith(b"%PDF"):
+        logger.info("pdf_not_a_pdf", url=url[:120], content_type=fetched.content_type)
         return None
 
     try:
         import pymupdf
 
-        with pymupdf.open(stream=content, filetype="pdf") as pdf:
+        with pymupdf.open(stream=fetched.content, filetype="pdf") as pdf:
             return "\n\n".join(page.get_text() for page in pdf)
     except Exception as exc:  # noqa: BLE001
         logger.info("pdf_parse_failed", url=url[:120], error=type(exc).__name__)

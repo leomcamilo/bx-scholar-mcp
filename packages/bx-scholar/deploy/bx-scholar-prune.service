@@ -1,0 +1,25 @@
+# Expurgo semanal do store durável.
+#
+# Sem isto nada é apagado: cada documento resolvido guarda o texto integral em
+# fulltext_span (~33k caracteres medidos), num Postgres que divide instância com
+# o BXat. Packs e texto órfão saem; work, work_source, venue e integrity ficam —
+# o entity store é o ativo e recarregá-lo custa rede.
+
+[Unit]
+Description=BX-Scholar — expurgo do store (packs e texto antigos)
+After=network-online.target postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/bx-scholar-v2/packages/bx-scholar
+EnvironmentFile=/etc/bx-scholar.env
+EnvironmentFile=/etc/bx-scholar-v2.env
+ExecStart=/root/bx-scholar-v2/.venv/bin/bx-scholar-admin prune --days 90
+TimeoutStartSec=600
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/root/.cache/bx-scholar
+PrivateTmp=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6

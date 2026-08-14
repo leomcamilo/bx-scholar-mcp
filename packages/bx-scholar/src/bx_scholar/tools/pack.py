@@ -116,16 +116,13 @@ def register(server: FastMCP, settings) -> None:
             )
 
         item_type = "claim" if section == "claims" else "work"
+        # None = todas; True = só selecionadas; False = só excluídas. O filtro
+        # vai para o WHERE, então offset, limit e total valem sobre o conjunto
+        # certo.
+        wanted = {"works": True, "excluded": False}.get(section)
         rows, total = await packs.get_items(
-            pack_id,
-            item_type=item_type,
-            offset=offset,
-            limit=limit,
-            selected_only=(section == "works"),
+            pack_id, item_type=item_type, offset=offset, limit=limit, selected=wanted
         )
-
-        if section == "excluded":
-            rows = [r for r in rows if not r.selected]
 
         if section == "claims":
             # O payload do claim já é o relatório completo; não achatar nem

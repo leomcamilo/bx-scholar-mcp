@@ -207,14 +207,24 @@ async def get_items(
     item_type: str = "work",
     offset: int = 0,
     limit: int = 25,
-    selected_only: bool = False,
+    selected: bool | None = None,
 ) -> tuple[list[PackItem], int]:
+    """Página de itens do pack.
+
+    ``selected``: ``True`` só as selecionadas, ``False`` só as excluídas,
+    ``None`` todas. O filtro tem de acontecer no **WHERE**, não depois: quando
+    o chamador filtrava em Python sobre uma página já limitada pelo banco, uma
+    obra excluída que caísse fora das primeiras `limit` linhas sumia, e o
+    `total` era o de todos os itens. Na prática, `section="excluded"` devolvia
+    página vazia sempre que as primeiras obras fossem selecionadas — que é o
+    caso comum, já que a maioria não é retratada.
+    """
     async with db.session() as s:
         base = select(PackItem).where(
             PackItem.pack_id == pack_id, PackItem.item_type == item_type
         )
-        if selected_only:
-            base = base.where(PackItem.selected.is_(True))
+        if selected is not None:
+            base = base.where(PackItem.selected.is_(selected))
 
         total = (
             await s.execute(

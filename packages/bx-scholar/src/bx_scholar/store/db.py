@@ -92,6 +92,14 @@ async def create_all() -> None:
         await conn.run_sync(Base.metadata.create_all)
 
 
+async def drop_all() -> None:
+    """Derruba o schema. Só para testes — dá isolamento por teste no Postgres,
+    onde não há o truque do arquivo temporário do SQLite."""
+    engine = get_engine()
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+
+
 async def healthcheck() -> dict:
     """Ping do store, para o log de startup e para o smoke de deploy."""
     engine = get_engine()

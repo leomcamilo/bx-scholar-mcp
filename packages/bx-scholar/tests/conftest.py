@@ -82,7 +82,26 @@ def settings() -> Settings:
 
 @pytest_asyncio.fixture
 async def store():
-    """Store limpo por teste, com o schema criado a partir do metadata."""
+    """Store limpo por teste.
+
+    Por padrão usa SQLite em arquivo temporário. Definindo
+    ``BX_SCHOLAR_TEST_DATABASE_URL`` a MESMA suíte roda contra Postgres — é
+    assim que a promessa de dialeto-agnóstico é verificada em vez de assumida.
+    O Postgres tem comportamentos que o SQLite não tem (VARCHAR(n) é imposto,
+    tipos são estritos), então rodar só num dos dois esconde defeito.
+    """
+    import os
+
+    url = os.environ.get("BX_SCHOLAR_TEST_DATABASE_URL")
+    if url:
+        db.init_engine(url)
+        await db.drop_all()
+        await db.create_all()
+        yield
+        await db.drop_all()
+        await db.dispose()
+        return
+
     tmp = Path(tempfile.mkdtemp()) / "test.db"
     db.init_engine(f"sqlite+aiosqlite:///{tmp}")
     await db.create_all()

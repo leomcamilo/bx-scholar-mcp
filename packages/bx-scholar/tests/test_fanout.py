@@ -118,3 +118,31 @@ class TestEssentialSources:
         res = await fan_out(conns, REQ, timeout=1.0)
         assert res.essential_missing == []
         assert not any("essencial" in n for n in res.limitations())
+
+
+class TestYearFilterForSourcesThatIgnoreIt:
+    """O arXiv não filtra por ano na API, e antes nada filtrava depois."""
+
+    def test_out_of_range_papers_are_dropped(self) -> None:
+        from bx_scholar.connectors.registry import _within_year_range
+
+        papers = [
+            make_paper("velho", year=2005),
+            make_paper("no alvo", year=2022),
+            make_paper("futuro", year=2030),
+        ]
+        kept = _within_year_range(papers, 2020, 2024)
+        assert [p.title for p in kept] == ["no alvo"]
+
+    def test_paper_without_year_is_kept(self) -> None:
+        from bx_scholar.connectors.registry import _within_year_range
+
+        # Descartar trocaria erro visível por erro invisível.
+        kept = _within_year_range([make_paper("sem ano", year=None)], 2020, 2024)
+        assert len(kept) == 1
+
+    def test_no_range_means_no_filtering(self) -> None:
+        from bx_scholar.connectors.registry import _within_year_range
+
+        papers = [make_paper("a", year=1999), make_paper("b", year=2030)]
+        assert _within_year_range(papers, None, None) == papers
