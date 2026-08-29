@@ -70,12 +70,6 @@ cd packages/bx-scholar-workflow
 uv run bx-scholar-workflow
 ```
 
-### Legacy monolith (still works)
-
-```bash
-uv run python run_server.py
-```
-
 ## Configuration
 
 ### MCP Client Setup

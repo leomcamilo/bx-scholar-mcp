@@ -19,7 +19,7 @@ select = [
 ]
 ignore = [
     "E501",   # line too long — handled by formatter
-    "T201",   # print — allowed in run_server.py (legacy) and scripts/
+    "T201",   # print — allowed in scripts/
     "UP007",  # use X | Y for unions — keep Optional for compat
     "TC001",  # move first-party import to TYPE_CHECKING — too noisy with runtime usage
     "TC002",  # move third-party import to TYPE_CHECKING — FastMCP etc. used at runtime
@@ -27,7 +27,6 @@ ignore = [
 ]
 
 [lint.per-file-ignores]
-"run_server.py" = ["T201", "B", "SIM", "RUF", "TCH", "TID", "PIE", "PTH"]  # legacy, don't lint heavily
 "scripts/*" = ["T201"]  # scripts can print
 
 [lint.isort]

@@ -23,15 +23,7 @@ packages/
   bx-scholar-workflow/   # Prompts, skills, orchestrators
 ```
 
-The root `run_server.py` is the legacy monolith — still functional but being migrated.
-
 ## Development workflow
-
-### Running the legacy server
-
-```bash
-uv run python run_server.py
-```
 
 ### Running a package server
 
