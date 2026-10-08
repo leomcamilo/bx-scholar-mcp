@@ -115,21 +115,23 @@ def _seq(text: str) -> list[str]:
 
 
 def content_words(text: str) -> int:
-    """Words that are not stopwords or symbols. A letter/number term counts once
-    however it is written ("IL-6", "IL6", "IL 6"): a number right after a word
-    is part of it."""
+    """Content words of a passage: words between spaces that are not stopwords
+    or bare symbols. A hyphenated compound is one word ("large-scale",
+    "4-oxo-2-butenoic"), and a number right after a word belongs to it ("IL 6"
+    counts as "IL-6"), so the count never inflates past what was written."""
     n = 0
-    prev_alpha = False
-    for t in tokens(text):
-        if _UNSPACED.search(t) or not any(c.isalnum() for c in t):
-            prev_alpha = False
+    prev_word = False
+    for word in fold(text).split():
+        core = re.sub(r"[^\w]|_", "", word)
+        if not core or _UNSPACED.search(core):
+            prev_word = False
             continue
-        if t.isdigit() and prev_alpha:
-            prev_alpha = False
+        if core.isdigit() and prev_word:
+            prev_word = False
             continue
-        if t not in _STOPWORDS:
+        if core not in _STOPWORDS:
             n += 1
-        prev_alpha = t.isalpha()
+        prev_word = core.isalpha()
     return n
 
 
@@ -148,13 +150,13 @@ def _is_unspaced(text: str) -> bool:
     return bool(_UNSPACED.search(text))
 
 
-def main_title(title: str, subtitle: str = "") -> str:
-    """The record's main title: before an explicit subtitle field, or before a
-    subtitle marker in the title itself."""
+def main_titles(title: str, subtitle: str = "") -> list[str]:
+    """Possible main titles: the title itself when the record has a separate
+    subtitle field, else the text before each subtitle marker in the title
+    ("L.—Preparation of X: a study" has "L." and "L.—Preparation of X")."""
     if subtitle:
-        return title
-    parts = _SUBTITLE.split(title, maxsplit=1)
-    return parts[0] if len(parts) > 1 else ""
+        return [title]
+    return [title[: m.start()] for m in _SUBTITLE.finditer(title) if title[: m.start()].strip()]
 
 
 @dataclass(frozen=True)
@@ -184,8 +186,7 @@ def compare_title(
     full_text = f"{title}: {subtitle}" if subtitle else title
     full_pieces = _pieces(full_text)
     full = [p.text for p in full_pieces]
-    main_text = main_title(title, subtitle)
-    main = _seq(main_text) if main_text else []
+    mains = [_seq(m) for m in main_titles(title, subtitle)]
 
     if g == full or g == _seq(title):
         # title alone equals full when there is no subtitle field
@@ -193,7 +194,7 @@ def compare_title(
         return TitleEvidence(
             state, "matches the full title" if state == "full" else "matches the main title"
         )
-    if main and g == main:
+    if g in mains:
         return TitleEvidence("main", "matches the main title (before the subtitle)")
     if mode == "full":
         return TitleEvidence("conflict", "differs from the record title")

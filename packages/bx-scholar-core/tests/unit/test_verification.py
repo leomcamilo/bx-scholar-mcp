@@ -343,7 +343,9 @@ def test_cycle1_title(given: str, title: str, mode: str, expected: str) -> None:
     assert compare_title(given, title, mode=mode).state == expected
 
 
-def test_cycle1_author_past_crossref_cut_is_not_a_conflict() -> None:
+def test_crossref_keeps_every_author_so_the_101st_verifies() -> None:
+    """Crossref returns the whole list; cutting it at 100 turned a real co-author
+    into "unknown" and a wrong one into "unknown" instead of "conflict"."""
     from bx_scholar_core.clients.crossref import _parse_item
 
     authors = [{"given": "A", "family": f"F{i}"} for i in range(100)]
@@ -353,5 +355,15 @@ def test_cycle1_author_past_crossref_cut_is_not_a_conflict() -> None:
         "author": [*authors, {"given": "A", "family": "Target"}],
     }
     p = _parse_item(item)
-    assert p.authors_truncated
-    assert decide(Query("Target, A.", 2020, "T"), [("crossref", p)]).status == "insufficient"
+    assert len(p.authors) == 101
+    assert decide(Query("Target, A.", 2020, "T"), [("crossref", p)]).status == "verified"
+    assert decide(Query("Nobody, A.", 2020, "T"), [("crossref", p)]).status == "conflict"
+
+
+def test_search_output_trims_long_author_lists() -> None:
+    from bx_scholar_core.tools.search import _dump
+
+    p = Paper(title="T", authors=[Author(name=f"A{i}") for i in range(150)])
+    d = _dump(p)
+    assert len(d["authors"]) == 100
+    assert d["authors_truncated"] is True

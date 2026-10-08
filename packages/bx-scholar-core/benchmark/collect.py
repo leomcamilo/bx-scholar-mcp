@@ -17,6 +17,7 @@ import argparse
 import gzip
 import hashlib
 import json
+import os
 import random
 import re
 import sys
@@ -30,6 +31,8 @@ import httpx
 
 DATA = Path(__file__).parent / "data" / "works"
 MAILTO = "bx-scholar-ci@users.noreply.github.com"
+# Optional free key; without it OpenAlex limits requests per IP and day.
+OPENALEX_KEY = os.environ.get("OPENALEX_API_KEY", "")
 UA = f"BX-Scholar-benchmark/0.1 (mailto:{MAILTO})"
 SEED = 20261008
 OPENALEX = "https://api.openalex.org/works"
@@ -87,15 +90,23 @@ STRATA: dict[str, dict] = {
     "long_11_20": {"quota": 20, "openalex": "authors_count:11-20,has_doi:true,type:article"},
     "long_21_100": {"quota": 20, "openalex": "authors_count:21-99,has_doi:true,type:article"},
     "long_100_plus": {"quota": 20, "openalex": "authors_count:>100,has_doi:true,type:article"},
-    "short_titles": {"quota": 40, "openalex": "has_doi:true,type:article"},
+    # short titles are rare in a random draw: Crossref's own random sample is
+    # cheaper to sift than OpenAlex pages
+    "short_titles": {"quota": 40, "crossref_sample": "type:journal-article"},
 }  # fmt: skip
+
+
+def _oa_params() -> dict:
+    return {"mailto": MAILTO, **({"api_key": OPENALEX_KEY} if OPENALEX_KEY else {})}
 
 
 def _freeze(resp: httpx.Response) -> dict:
     body = resp.content
+    # the API key never goes into the frozen record
+    url = re.sub(r"([?&])api_key=[^&]*&?", r"\1", str(resp.request.url)).rstrip("?&")
     return {
         "method": "GET",
-        "url": str(resp.request.url),
+        "url": url,
         "status": resp.status_code,
         "fetched_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "sha256": hashlib.sha256(body).hexdigest(),
@@ -179,6 +190,12 @@ def admit(stratum: str, item: dict, oa: dict | None) -> tuple[bool, str]:
 
 
 def candidate_dois(f: Fetcher, stratum: str, spec: dict, page: int) -> list[str]:
+    if "crossref_sample" in spec:
+        r = f.get(
+            CROSSREF,
+            {"sample": 100, "filter": spec["crossref_sample"], "select": "DOI", "mailto": MAILTO},
+        )
+        return [i["DOI"] for i in r.json()["message"]["items"]] if r.status_code == 200 else []
     if "crossref_author_queries" in spec:
         q = spec["crossref_author_queries"][page % len(spec["crossref_author_queries"])]
         r = f.get(
@@ -200,7 +217,7 @@ def candidate_dois(f: Fetcher, stratum: str, spec: dict, page: int) -> list[str]
             "seed": SEED + page,
             "per_page": 200,
             "select": "doi",
-            "mailto": MAILTO,
+            **_oa_params(),
         },
     )
     if r.status_code != 200:
@@ -242,7 +259,7 @@ def collect(limit: int) -> None:
                 item = _crossref_item(cr)
                 if item is None:
                     continue
-                oa = _freeze(f.get(f"{OPENALEX}/https://doi.org/{doi}", {"mailto": MAILTO}))
+                oa = _freeze(f.get(f"{OPENALEX}/https://doi.org/{doi}", _oa_params()))
                 ok, _why = admit(stratum, item, None)
                 if not ok:
                     continue

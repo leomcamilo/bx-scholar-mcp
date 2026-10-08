@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from bx_scholar_core.clients.base import AsyncHTTPClient, NonRetryableHTTPError
-from bx_scholar_core.models.paper import MAX_AUTHORS, Author, Paper
+from bx_scholar_core.models.paper import Author, Paper
 from bx_scholar_core.models.verification import RetractionStatus
 
 CROSSREF_BASE = "https://api.crossref.org"
@@ -62,8 +62,9 @@ def _parse_item(item: dict[str, Any]) -> Paper:
         title=(item.get("title") or [""])[0],
         doi=item.get("DOI", ""),
         year=year,
-        authors=[_parse_author(a) for a in (item.get("author") or [])[:MAX_AUTHORS]],
-        authors_truncated=len(item.get("author") or []) > MAX_AUTHORS,
+        # Crossref returns the whole list; keep it so a co-author past the 100th
+        # can be verified (search output trims it, see tools/search.py)
+        authors=[_parse_author(a) for a in item.get("author") or []],
         cited_by_count=item.get("is-referenced-by-count", 0),
         journal=(item.get("container-title") or [""])[0],
         issn=(item.get("ISSN") or [""])[0],

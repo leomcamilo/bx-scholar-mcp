@@ -76,14 +76,29 @@ def _words(text: str) -> list[str]:
 
 
 def _content(words: list[str]) -> int:
+    """Content words (specification): words between spaces that are not
+    stopwords; a number right after a word belongs to it ("IL 6" = "IL-6")."""
     n = 0
+    prev_word = False
     for w in words:
-        core = re.sub(r"[^\w]", "", _fold(w))
-        if _CJK.search(w):
-            n += len(_CJK.findall(w)) // 2
-        elif core and core not in _STOP:
+        core = re.sub(r"[^\w]|_", "", _fold(w))
+        if not core or _CJK.search(core):
+            prev_word = False
+            continue
+        if core.isdigit() and prev_word:
+            prev_word = False
+            continue
+        if core not in _STOP:
             n += 1
+        prev_word = core.isalpha()
     return n
+
+
+def _display(text: str) -> str:
+    """What a reader sees: markup removed (MathML, <i>, <sub>), spaces collapsed.
+    Citations are written from this, never from the markup."""
+    text = re.sub(r"<[^>]+>", "", text)
+    return re.sub(r"\s+", " ", text).strip()
 
 
 @dataclass
@@ -136,11 +151,16 @@ def load_works() -> list[Work]:
                 stratum=rec["stratum"],
                 split=rec["split"],
                 doi=rec["doi"],
-                title=(item.get("title") or [""])[0].strip(),
-                subtitle=((item.get("subtitle") or [""])[0] or "").strip(),
+                title=_display((item.get("title") or [""])[0]),
+                subtitle=_display((item.get("subtitle") or [""])[0] or ""),
                 year=_year(item),
                 persons=[
-                    {"family": a["family"].strip(), "given": (a.get("given") or "").strip()}
+                    {
+                        # malformed records put a romanized name in parentheses
+                        # in the family field: "(Takayuki Sato)"
+                        "family": re.sub(r"[()]", "", a["family"]).strip(),
+                        "given": re.sub(r"[()]", "", a.get("given") or "").strip(),
+                    }
                     for a in authors
                     if a.get("family")
                 ],
@@ -156,8 +176,18 @@ def load_works() -> list[Work]:
 
 
 def _initials(given: str, dots: bool = True, hyphen: bool = True) -> str:
+    """APA/Vancouver initials of the given names. Dotted groups give one initial
+    per letter ("L.K.F." -> L. K. F.); lowercase particles are left out ("da")."""
     out = []
     for part in given.split():
+        if part.islower() and _fold(part) in _PARTICLES:
+            continue
+        if "." in part:
+            # one initial per dotted component: "L.K.F." -> L K F, "Yu." -> Y,
+            # "D.R.Th." -> D R T
+            comps = [c.strip("-") for c in part.split(".") if c.strip("-")]
+            out.extend(c[0].upper() + ("." if dots else "") for c in comps if c[0].isalpha())
+            continue
         comps = [c for c in part.split("-") if c]
         if not comps:
             continue
@@ -167,8 +197,20 @@ def _initials(given: str, dots: bool = True, hyphen: bool = True) -> str:
     return (" " if dots else "").join(out)
 
 
+def _latin(text: str) -> bool:
+    return not _CJK.search(text)
+
+
 def render(person: dict, style: str) -> str:
     fam, giv = person["family"], person["given"]
+    if not _latin(fam) and not _latin(giv or fam) and style == "natural":
+        return f"{fam}{giv}"
+    if not _latin(fam + giv):
+        # CJK names are cited whole, family first, never with initials; a mixed
+        # record ("Kang Wanwan" + "康弯弯") is cited in its comma form
+        if style == "natural" and _latin(fam) == _latin(giv or fam):
+            return f"{fam}{giv}"
+        return f"{fam}, {giv}" if giv else fam
     if not giv:
         return fam.upper() if style == "abnt" else fam
     if style == "apa":
@@ -347,7 +389,12 @@ def generate(works: list[Work]) -> list[Case]:
                 synthetic=["authors removed from both records"], strip_authors=True)  # fmt: skip
         if w.orgs:
             acronym = "".join(x[0] for x in w.orgs[0].split() if x[0].isupper())
-            if len(acronym) >= 2 and f"({acronym})" not in w.orgs[0]:
+            # never an acronym that is also a surname in the work ("TA" vs a Ta)
+            if (
+                2 <= len(acronym) <= 6
+                and not _has_family(w, acronym)
+                and f"({acronym})" not in w.orgs[0]
+            ):
                 add("org_bare_acronym", acronym, y, full, "auto", "insufficient")
 
         # --- conflicts ---------------------------------------------------
@@ -372,7 +419,9 @@ def generate(works: list[Work]) -> list[Case]:
                     add("initial_conflict", f"{p0['family']}, {wrong.upper()}.", y, full,
                         "auto", "conflict")  # fmt: skip
         elif w.orgs:
-            others = [o for o in org_names if _fold(o) != _fold(w.orgs[0])]
+            # no organization that already authors this work (some list several)
+            mine = {_fold(o) for o in w.orgs} | {_fold(p["family"]) for p in w.persons}
+            others = [o for o in org_names if _fold(o) not in mine]
             if others:
                 add("org_other", rng.choice(others), y, full, "auto", "conflict")
         if not _CJK.search(full):
@@ -413,8 +462,8 @@ def main() -> None:
     works = load_works()
     cases = generate(works)
     for split in ("dev", "holdout"):
-        out = CASES / f"cases_{split}.jsonl"
-        with out.open("w") as f:
+        out = CASES / f"cases_{split}.jsonl.gz"
+        with gzip.open(out, "wt", encoding="utf-8") as f:
             for c in cases:
                 if c.split == split:
                     f.write(json.dumps(asdict(c), ensure_ascii=False) + "\n")

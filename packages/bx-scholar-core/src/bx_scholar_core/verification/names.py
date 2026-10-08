@@ -41,6 +41,10 @@ _ORG_WORDS = re.compile(
 
 AuthorState = Literal["exact", "compatible", "conflict", "unknown"]
 
+_CJK_NAME = re.compile("[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]{2,}")
+# An initial is a single Latin letter: a lone "张" or "안" is a name, not an initial.
+_L = "[A-Za-z\u00c0-\u024f]"
+
 # Vancouver/NLM writes every given name as an initial: "Arruda ARDS" for Ana
 # Rita dos Santos Arruda.
 MAX_GROUPED_INITIALS = 6
@@ -53,7 +57,7 @@ def _letters(text: str) -> str:
 def _surname_key(text: str) -> list[str]:
     """Surname as comparable words: folded, hyphen and space equivalent,
     particles kept as words of their own."""
-    return [w for w in re.split(r"[\s\-'.]+", fold(text)) if w and w not in _NOISE]
+    return [w for w in re.split(r"[\s\-'.()]+", fold(text)) if w and w not in _NOISE]
 
 
 @dataclass(frozen=True)
@@ -64,17 +68,24 @@ class Given:
     joined: str  # all letters of the given names, for "Minjun" ~ "Min-Jun"
 
 
+def _few_vowels(word: str, limit: int) -> bool:
+    return sum(c in "aeiou" for c in fold(word)) <= limit
+
+
 def parse_given(text: str, caps_as_initials: bool | str = True) -> Given:
-    """caps_as_initials: read undotted capitals ("JD") as initials. True after a
-    comma or after the surname (Vancouver "Smith JD"); False for words before
-    the surname ("WEI" in "WEI Li" is a name); "no_vowel" for a source's given
-    field, where "JD" is initials but "WEI" is a name."""
+    """caps_as_initials: when undotted capitals ("JD") are initials. True in a
+    Vancouver block after the surname ("Oliveira AIAD"); "comma" after a comma,
+    up to three letters ("Smith, JD", but "KENNEY, SYLVIA W." is a name); False
+    before the surname ("WEI Li"); "no_vowel" in a source's given field."""
     parts: list[tuple[str, bool]] = []
     for raw in re.split(r"\s+", text.strip()):
         raw = raw.strip(",")
         if not raw:
             continue
-        if re.fullmatch(r"(?:\w\.)+\w?\.?|\w(?:-\w)+\.?|\w", raw) and not re.fullmatch(
+        if raw.islower() and fold(raw) in PARTICLES:
+            parts.append((fold(raw), False))
+            continue
+        if re.fullmatch(rf"(?:{_L}\.)+{_L}?\.?|{_L}(?:-{_L})+\.?|{_L}", raw) and not re.fullmatch(
             r"\w{2,}", raw
         ):
             # "J.", "J.D.", "J.-D.", "M-J", "J"
@@ -85,7 +96,11 @@ def parse_given(text: str, caps_as_initials: bool | str = True) -> Given:
             and raw.isupper()
             and 2 <= len(raw) <= MAX_GROUPED_INITIALS
             and raw.isalpha()
-            and (caps_as_initials is True or not set(fold(raw)) & set("aeiouy"))
+            and (
+                caps_as_initials is True  # Vancouver block after the surname: always
+                or (caps_as_initials == "comma" and len(raw) <= 3)  # "Smith, JD"; not "SYLVIA"
+                or (caps_as_initials == "no_vowel" and _few_vowels(raw, 0))  # source field
+            )
         ):
             # Vancouver initials "JD" (only reached for the given-name slot)
             parts.extend((c, True) for c in fold(raw))
@@ -93,7 +108,7 @@ def parse_given(text: str, caps_as_initials: bool | str = True) -> Given:
         for comp in re.split(r"-", raw):
             comp_f = _letters(comp)
             if comp_f:
-                parts.append((comp_f, len(comp_f) == 1))
+                parts.append((comp_f, len(comp_f) == 1 and bool(re.fullmatch(_L, comp_f))))
     return Given(tuple(parts), "".join(p for p, initial in parts if not initial))
 
 
@@ -107,8 +122,18 @@ def _aligned(a: tuple[tuple[str, bool], ...], b: tuple[tuple[str, bool], ...]) -
     return True
 
 
+# Particles that occur inside given names ("Angela Rebelo da Silva"). Narrower
+# than PARTICLES: "Bin" or "El" can be a whole given name.
+_GIVEN_PARTICLES = frozenset(
+    {"da", "de", "do", "das", "dos", "del", "della", "van", "von", "der", "den", "ter", "ten",
+     "la", "le", "du", "e"}
+)  # fmt: skip
+
+
 def _no_particles(parts: tuple[tuple[str, bool], ...]) -> tuple[tuple[str, bool], ...]:
-    return tuple(p for p in parts if p[1] or p[0] not in PARTICLES)
+    """Drop particles after the first component; never empty the name."""
+    kept = tuple(p for i, p in enumerate(parts) if i == 0 or p[1] or p[0] not in _GIVEN_PARTICLES)
+    return kept or parts
 
 
 def given_compatible(a: Given, b: Given) -> bool:
@@ -148,43 +173,55 @@ class CitedAuthor:
 
 def _is_initials_token(tok: str, caps: bool = False) -> bool:
     """ "J.", "J.D.", "M-J", "J"; with caps=True also "JD" (only where initials
-    are expected: after the surname)."""
+    are expected: after the surname). A lowercase particle ("e", "y") is not."""
+    if tok.islower() and fold(tok) in PARTICLES:
+        return False
     return bool(
-        re.fullmatch(r"(?:\w\.)+\w?\.?|\w(?:-\w)+\.?|\w\.?", tok)
+        re.fullmatch(rf"(?:{_L}\.)+{_L}?\.?|{_L}(?:-{_L})+\.?|{_L}\.?", tok)
         or (caps and tok.isupper() and tok.isalpha() and len(tok) <= MAX_GROUPED_INITIALS)
     )
 
 
 def parse_cited(name: str) -> CitedAuthor:
     """Readings of one cited author. "Silva, L. C." and "Smith JD" have one;
-    "John Smith" has a western reading and, as a two-word name, an eastern one."""
+    "John Smith" has a western reading and, with only full words, an eastern
+    one. A name with organization words is also read as a person, because
+    sources sometimes encode a collaboration that way (family "Consortium",
+    given "DEEP")."""
     aliases = frozenset(
         fold(a).strip() for a in re.findall(r"\(([^)]*)\)", name) if a.strip().isupper()
     )
     raw = re.sub(r"\([^)]*\)", " ", name).strip().strip(",;")
+    if not raw or raw.startswith(","):
+        # "(The NANOGrav Collaboration)", "(Takayuki Sato), 佐藤 孝幸": the
+        # parenthesis is the name, not an aside
+        raw = re.sub(r"[()]", " ", name).strip().strip(",;")
     literal = _org_name(name)
+    if not raw:
+        return CitedAuthor(name, (), "")
     if _ORG_WORDS.search(raw):
-        return CitedAuthor(name, (), literal, "", aliases, literal)
+        readings = _person_readings(raw) if ("," in raw or len(raw.split()) <= 3) else ()
+        return CitedAuthor(name, readings, literal, "", aliases, literal)
+    toks = raw.split()
+    acronym = ""
+    if len(toks) == 1 and toks[0].isupper() and toks[0].isalpha() and 2 <= len(toks[0]) <= 6:
+        acronym = fold(toks[0])
+    return CitedAuthor(name, _person_readings(raw), "", acronym, aliases, literal)
+
+
+def _person_readings(raw: str) -> tuple[PersonReading, ...]:
     readings: list[PersonReading] = []
     if "," in raw:
         fam, giv = raw.split(",", 1)
         key = tuple(_surname_key(fam))
-        if key:
-            readings.append(PersonReading(key, parse_given(giv)))
-        return CitedAuthor(name, tuple(readings), "", "", aliases, literal)
+        return (PersonReading(key, parse_given(giv, "comma")),) if key else ()
     toks = raw.split()
-    if not toks:
-        return CitedAuthor(name, (), "")
     if len(toks) == 1:
-        tok = toks[0]
-        acronym = fold(tok) if tok.isupper() and tok.isalpha() and 2 <= len(tok) <= 6 else ""
-        reading = PersonReading(tuple(_surname_key(tok)), Given((), ""))
-        return CitedAuthor(name, (reading,), "", acronym, aliases, literal)
+        return (PersonReading(tuple(_surname_key(toks[0])), Given((), "")),)
     # Vancouver "Smith JD", "Silva LC", "De Almeida Marcarini E": the surname
-    # (one or more words) comes first, then a block of initials
-    # Undotted capitals read as initials only when the surname shows its case:
-    # in "MARIANA MEDEIROS PRATES MAIA" every word is capitalized and none is
-    # an initial.
+    # (one or more words) comes first, then a block of initials. Undotted
+    # capitals are initials only when the surname shows its case: in "MARIANA
+    # MEDEIROS PRATES MAIA" every word is capitalized and none is an initial.
     caps_ok = any(not t.isupper() for t in toks)
     k = len(toks)
     while k > 1 and _is_initials_token(toks[k - 1], caps=caps_ok):
@@ -193,14 +230,17 @@ def parse_cited(name: str) -> CitedAuthor:
         readings.append(
             PersonReading(tuple(_surname_key(" ".join(toks[:k]))), parse_given(" ".join(toks[k:])))
         )
-        if k == 1 and len(toks) == 2 and toks[1].isupper() and toks[1].isalpha():
-            # "Wei LI": the capitalized word may be the surname instead
+        if k == len(toks) - 1 and toks[-1].isupper() and toks[-1].isalpha():
+            # "Wei LI", "Mohammad Reza MOSAVI": the capitalized last word may be
+            # the surname instead of a block of initials
             readings.append(
                 PersonReading(
-                    tuple(_surname_key(toks[1])), parse_given(toks[0], False), secondary=True
+                    tuple(_surname_key(toks[-1])),
+                    parse_given(" ".join(toks[:-1]), False),
+                    secondary=True,
                 )
             )
-        return CitedAuthor(name, tuple(readings), "", "", aliases, literal)
+        return tuple(readings)
     # "J. D. Smith", "John David Smith", "Leonardo Camilo da Silva", "WEI Li"
     first_full = next((i for i, t in enumerate(toks) if not _is_initials_token(t)), 0)
     j = len(toks) - 1
@@ -211,17 +251,16 @@ def parse_cited(name: str) -> CitedAuthor:
             tuple(_surname_key(" ".join(toks[j:]))), parse_given(" ".join(toks[:j]), False)
         )
     )
-    if len(toks) >= 2 and not any(_is_initials_token(t) for t in toks):
+    if not any(_is_initials_token(t) for t in toks):
         # "Wang Wei", "Wang Xiao Ming": the surname may come first
         readings.append(
             PersonReading(
                 tuple(_surname_key(toks[0])), parse_given(" ".join(toks[1:])), secondary=True
             )
         )
-    if len(toks) >= 2 and all(not _is_initials_token(t) for t in toks):
         # a bare compound surname with no given name ("García Márquez")
         readings.append(PersonReading(tuple(_surname_key(raw)), Given((), ""), secondary=True))
-    return CitedAuthor(name, tuple(readings), "", "", aliases)
+    return tuple(readings)
 
 
 @dataclass(frozen=True)
@@ -252,8 +291,12 @@ def record_author(a: Author) -> RecordAuthor:
         text = a.literal or a.name
         return RecordAuthor((), _org_name(text), True, _aliases(text))
     if a.family:
-        given = parse_given(a.given, "no_vowel")
-        return RecordAuthor((PersonReading(tuple(_surname_key(a.family)), given),), "", True)
+        family, given_text = a.family, a.given
+        if "," in family and not given_text:
+            # malformed source record: "Song,In-Ahm" in the family field
+            family, given_text = (x.strip() for x in family.split(",", 1))
+        given = parse_given(given_text, "no_vowel")
+        return RecordAuthor((PersonReading(tuple(_surname_key(family)), given),), "", True)
     if _ORG_WORDS.search(a.name):
         return RecordAuthor((), _org_name(a.name), False, _aliases(a.name))
     parsed = parse_cited(a.name)
@@ -288,7 +331,7 @@ def compare_person(cited: PersonReading, record: PersonReading) -> AuthorState:
         c = [w for w in cited.surname if w not in PARTICLES]
         r = [w for w in record.surname if w not in PARTICLES]
         extra = c[: -len(r)] if r and len(c) > len(r) and c[-len(r) :] == r else []
-        rg = record.given.parts
+        rg = _no_particles(record.given.parts)
         if extra and len(rg) >= len(extra):
             # The extra surname words sit right before the surname, so they line
             # up with the END of the record's given names ("Gabriel García" +
@@ -323,8 +366,17 @@ def compare_author(cited: CitedAuthor, record: RecordAuthor) -> AuthorState:
             # initials are never taken as proof either way.
             return "compatible" if cited.acronym in record.aliases else "unknown"
         return "conflict"
-    if cited.organization:
+    if cited.organization and not cited.readings:
         return "conflict"
+    whole = fold(re.sub(r"\s+", "", cited.raw))
+    if _CJK_NAME.fullmatch(whole):
+        # CJK names are often cited whole, family first, no space ("张芳蕾")
+        for r in record.readings:
+            fam, giv = "".join(r.surname), r.given.joined
+            if whole in (fam + giv, giv + fam) and giv:
+                return "exact"
+            if whole == fam and not giv:
+                return "exact"
     states: list[AuthorState] = []
     for c in cited.readings:
         for r in record.readings:
@@ -384,7 +436,9 @@ def _compare_split(
     cited = [parse_cited(n) for n in names]
     cited = [c for c in cited if c.readings or c.organization or c.acronym]
     if not cited:
-        return "unknown", "no author given"
+        # something was written but no name could be read from it: never treat
+        # that as "no author given", which would skip the check
+        return "unknown", "the cited author could not be interpreted"
     records = [record_author(a) for a in record_authors if a.name.strip() or a.family]
     if not records:
         return "unknown", "record has no authors"

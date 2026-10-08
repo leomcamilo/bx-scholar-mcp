@@ -47,7 +47,12 @@ def load_raw() -> dict[str, dict]:
         cr = json.loads(rec["http"]["crossref_work"]["body"])["message"]
         oa_http = rec["http"]["openalex_work"]
         oa = json.loads(oa_http["body"]) if oa_http["status"] == 200 else None
-        raw[rec["id"]] = {"crossref": cr, "openalex": oa, "doi": rec["doi"]}
+        # every spelling of the work's DOI found in its own frozen records
+        # (OpenAlex "...26.1.45" and Crossref "...26.1.045" name the same work)
+        dois = {rec["doi"].lower(), (cr.get("DOI") or "").lower()}
+        if oa and oa.get("doi"):
+            dois.add(oa["doi"].replace("https://doi.org/", "").lower())
+        raw[rec["id"]] = {"crossref": cr, "openalex": oa, "doi": rec["doi"], "dois": dois - {""}}
     return raw
 
 
@@ -107,10 +112,10 @@ def _transport(
     return httpx.MockTransport(handler)
 
 
-def classify(case: dict, result: dict) -> str | None:
+def classify(case: dict, result: dict, work_dois: set[str]) -> str | None:
     exp, got = case["expected_status"], result["status"]
     doi = (result.get("match") or {}).get("doi", "").lower()
-    if got == "verified" and (exp != "verified" or doi != case["expected_doi"].lower()):
+    if got == "verified" and (exp != "verified" or doi not in work_dois):
         return "false_positive"
     if exp == "verified" and got != "verified":
         return "false_negative"
@@ -124,9 +129,8 @@ def classify(case: dict, result: dict) -> str | None:
 async def run(split: str, limit: int | None, verbose: bool) -> dict:
     setup_logging(level="CRITICAL")
     raw = load_raw()
-    cases = [
-        json.loads(line) for line in (ROOT / "data" / f"cases_{split}.jsonl").open() if line.strip()
-    ]
+    with gzip.open(ROOT / "data" / f"cases_{split}.jsonl.gz", "rt", encoding="utf-8") as f:
+        cases = [json.loads(line) for line in f if line.strip()]
     if limit:
         cases = cases[:limit]
     pool = ClientPool(Settings(polite_email="bench@bx-scholar.dev", cache_enabled=False))
@@ -151,7 +155,11 @@ async def run(split: str, limit: int | None, verbose: bool) -> dict:
             case["title_mode"],
         )  # fmt: skip
         # a request the simulator refused is a harness failure, counted on its own
-        kind = "harness" if refusals or result.get("source_errors") else classify(case, result)
+        kind = (
+            "harness"
+            if refusals or result.get("source_errors")
+            else classify(case, result, raw[case["work"]]["dois"])
+        )
         t = by_transformation.setdefault(case["transformation"], Counter())
         t["cases"] += 1
         if kind:
