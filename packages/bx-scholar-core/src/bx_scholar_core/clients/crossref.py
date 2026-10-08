@@ -63,6 +63,7 @@ def _parse_item(item: dict[str, Any]) -> Paper:
         doi=item.get("DOI", ""),
         year=year,
         authors=[_parse_author(a) for a in (item.get("author") or [])[:MAX_AUTHORS]],
+        authors_truncated=len(item.get("author") or []) > MAX_AUTHORS,
         cited_by_count=item.get("is-referenced-by-count", 0),
         journal=(item.get("container-title") or [""])[0],
         issn=(item.get("ISSN") or [""])[0],

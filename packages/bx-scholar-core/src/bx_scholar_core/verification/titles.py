@@ -46,23 +46,39 @@ TitleMode = Literal["auto", "full", "fragment"]
 TitleMatch = Literal["full", "main", "fragment", "locate_only", "conflict", "unknown"]
 
 
+# Presentation markup Crossref keeps in titles: H<sub>2</sub>O, <i>in vitro</i>.
+_MARKUP = re.compile(r"</?(?:sub|sup|i|b|em|strong|scp|sc|u|mml:[a-z]+|math)\b[^>]*>", re.I)
+# Symbols that change meaning (x > 0 vs x < 0) and stay as tokens.
+_MATH = "<>=+\u00b1\u00d7\u00f7\u2264\u2265\u2260\u2248\u221e%\u00b0"
+
+
+def _is_latin_base(ch: str) -> bool:
+    return ch.isascii() or "\u00c0" <= ch <= "\u024f"
+
+
 def fold(text: str) -> str:
-    """Safe normalization shared by titles and names."""
+    """Safe normalization shared by titles and names: markup tags, HTML
+    entities, Unicode compatibility forms, case, typographic quotes and dashes,
+    and accents on Latin letters only (the dakuten in "が" is not an accent)."""
+    text = _MARKUP.sub("", text)
     text = html.unescape(text)
     text = unicodedata.normalize("NFKC", text)
     for k, v in _QUOTES.items():
         text = text.replace(k, v)
     text = re.sub(f"[{_DASHES}]", "-", text)
-    text = unicodedata.normalize("NFKD", text.casefold())
-    text = "".join(c for c in text if not unicodedata.combining(c))
-    return unicodedata.normalize("NFC", text)
+    out: list[str] = []
+    for ch in unicodedata.normalize("NFKD", text.casefold()):
+        if unicodedata.combining(ch) and out and _is_latin_base(out[-1]):
+            continue
+        out.append(ch)
+    return unicodedata.normalize("NFC", "".join(out))
 
 
 def tokens(text: str) -> list[str]:
     """Ordered terms. Letter/digit runs stay whole ("h2o2", "il6", "c2h6o");
     spaceless scripts become one token per character."""
     out: list[str] = []
-    for run in re.findall(r"[^\W_]+", fold(text)):
+    for run in re.findall(rf"[^\W_]+|[{re.escape(_MATH)}]", fold(text)):
         if _UNSPACED.search(run):
             out.extend(_split_unspaced(run))
         else:
@@ -99,8 +115,22 @@ def _seq(text: str) -> list[str]:
 
 
 def content_words(text: str) -> int:
-    """Words that are not stopwords; a letter/number term ("IL-6") counts once."""
-    return sum(1 for t in tokens(text) if t not in _STOPWORDS and not _UNSPACED.search(t))
+    """Words that are not stopwords or symbols. A letter/number term counts once
+    however it is written ("IL-6", "IL6", "IL 6"): a number right after a word
+    is part of it."""
+    n = 0
+    prev_alpha = False
+    for t in tokens(text):
+        if _UNSPACED.search(t) or not any(c.isalnum() for c in t):
+            prev_alpha = False
+            continue
+        if t.isdigit() and prev_alpha:
+            prev_alpha = False
+            continue
+        if t not in _STOPWORDS:
+            n += 1
+        prev_alpha = t.isalpha()
+    return n
 
 
 def _contains(window: list[str], pieces: list[_Piece]) -> bool:

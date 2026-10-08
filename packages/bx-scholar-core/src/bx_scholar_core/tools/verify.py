@@ -59,6 +59,8 @@ def _response(query: Query, decision: Decision, errors: dict[str, str]) -> dict[
         }
         if best.warnings():
             out["warnings"] = best.warnings()
+        if errors:
+            out["source_errors"] = errors  # verified by one source; the other failed
         return out
 
     messages = {

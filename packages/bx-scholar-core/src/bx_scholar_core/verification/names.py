@@ -64,10 +64,11 @@ class Given:
     joined: str  # all letters of the given names, for "Minjun" ~ "Min-Jun"
 
 
-def parse_given(text: str, caps_as_initials: bool = True) -> Given:
-    """caps_as_initials: read "JD" as initials. True after a comma or after the
-    surname (Vancouver "Smith JD"); False for words before the surname, where
-    "WEI" in "WEI Li" is a name."""
+def parse_given(text: str, caps_as_initials: bool | str = True) -> Given:
+    """caps_as_initials: read undotted capitals ("JD") as initials. True after a
+    comma or after the surname (Vancouver "Smith JD"); False for words before
+    the surname ("WEI" in "WEI Li" is a name); "no_vowel" for a source's given
+    field, where "JD" is initials but "WEI" is a name."""
     parts: list[tuple[str, bool]] = []
     for raw in re.split(r"\s+", text.strip()):
         raw = raw.strip(",")
@@ -84,6 +85,7 @@ def parse_given(text: str, caps_as_initials: bool = True) -> Given:
             and raw.isupper()
             and 2 <= len(raw) <= MAX_GROUPED_INITIALS
             and raw.isalpha()
+            and (caps_as_initials is True or not set(fold(raw)) & set("aeiouy"))
         ):
             # Vancouver initials "JD" (only reached for the given-name slot)
             parts.extend((c, True) for c in fold(raw))
@@ -95,19 +97,34 @@ def parse_given(text: str, caps_as_initials: bool = True) -> Given:
     return Given(tuple(parts), "".join(p for p, initial in parts if not initial))
 
 
-def given_compatible(a: Given, b: Given) -> bool:
-    """All components present on both sides agree, position by position."""
-    if not a.parts or not b.parts:
-        return True
-    if a.joined and b.joined and a.joined == b.joined:
-        return True  # "Minjun" vs "Min-Jun"
-    for (x, xi), (y, yi) in zip(a.parts, b.parts, strict=False):
+def _aligned(a: tuple[tuple[str, bool], ...], b: tuple[tuple[str, bool], ...]) -> bool:
+    for (x, xi), (y, yi) in zip(a, b, strict=False):
         if xi or yi:
             if x[0] != y[0]:
                 return False
         elif x != y:
             return False
     return True
+
+
+def _no_particles(parts: tuple[tuple[str, bool], ...]) -> tuple[tuple[str, bool], ...]:
+    return tuple(p for p in parts if p[1] or p[0] not in PARTICLES)
+
+
+def given_compatible(a: Given, b: Given) -> bool:
+    """All components present on both sides agree, position by position. Some
+    styles abbreviate the particles of given names and some drop them ("A. R. S."
+    and "A. R. D. S." for Angela Rebelo da Silva), so both alignments count."""
+    if not a.parts or not b.parts:
+        return True
+    no_initials = not any(i for _, i in a.parts) and not any(i for _, i in b.parts)
+    if no_initials and a.joined and a.joined == b.joined:
+        return True  # "Minjun" vs "Min-Jun"; never skips an initial ("John P." vs "John D.")
+    return any(
+        _aligned(x, y)
+        for x in (a.parts, _no_particles(a.parts))
+        for y in (b.parts, _no_particles(b.parts))
+    )
 
 
 @dataclass(frozen=True)
@@ -126,6 +143,7 @@ class CitedAuthor:
     organization: str  # folded organization name when the citation is one
     acronym: str = ""  # a bare "WHO": may name an organization, never by guessing
     aliases: frozenset[str] = frozenset()  # "(WHO)" given right in the name
+    literal: str = ""  # the whole name, folded, to compare with an organization
 
 
 def _is_initials_token(tok: str, caps: bool = False) -> bool:
@@ -144,15 +162,16 @@ def parse_cited(name: str) -> CitedAuthor:
         fold(a).strip() for a in re.findall(r"\(([^)]*)\)", name) if a.strip().isupper()
     )
     raw = re.sub(r"\([^)]*\)", " ", name).strip().strip(",;")
+    literal = _org_name(name)
     if _ORG_WORDS.search(raw):
-        return CitedAuthor(name, (), " ".join(_surname_key(raw)), "", aliases)
+        return CitedAuthor(name, (), literal, "", aliases, literal)
     readings: list[PersonReading] = []
     if "," in raw:
         fam, giv = raw.split(",", 1)
         key = tuple(_surname_key(fam))
         if key:
             readings.append(PersonReading(key, parse_given(giv)))
-        return CitedAuthor(name, tuple(readings), "", "", aliases)
+        return CitedAuthor(name, tuple(readings), "", "", aliases, literal)
     toks = raw.split()
     if not toks:
         return CitedAuthor(name, (), "")
@@ -160,7 +179,7 @@ def parse_cited(name: str) -> CitedAuthor:
         tok = toks[0]
         acronym = fold(tok) if tok.isupper() and tok.isalpha() and 2 <= len(tok) <= 6 else ""
         reading = PersonReading(tuple(_surname_key(tok)), Given((), ""))
-        return CitedAuthor(name, (reading,), "", acronym, aliases)
+        return CitedAuthor(name, (reading,), "", acronym, aliases, literal)
     # Vancouver "Smith JD", "Silva LC", "De Almeida Marcarini E": the surname
     # (one or more words) comes first, then a block of initials
     # Undotted capitals read as initials only when the surname shows its case:
@@ -181,7 +200,7 @@ def parse_cited(name: str) -> CitedAuthor:
                     tuple(_surname_key(toks[1])), parse_given(toks[0], False), secondary=True
                 )
             )
-        return CitedAuthor(name, tuple(readings), "", "", aliases)
+        return CitedAuthor(name, tuple(readings), "", "", aliases, literal)
     # "J. D. Smith", "John David Smith", "Leonardo Camilo da Silva", "WEI Li"
     first_full = next((i for i, t in enumerate(toks) if not _is_initials_token(t)), 0)
     j = len(toks) - 1
@@ -192,10 +211,12 @@ def parse_cited(name: str) -> CitedAuthor:
             tuple(_surname_key(" ".join(toks[j:]))), parse_given(" ".join(toks[:j]), False)
         )
     )
-    if len(toks) == 2 and not any(_is_initials_token(t) for t in toks):
-        # "Wang Wei": the surname may come first
+    if len(toks) >= 2 and not any(_is_initials_token(t) for t in toks):
+        # "Wang Wei", "Wang Xiao Ming": the surname may come first
         readings.append(
-            PersonReading(tuple(_surname_key(toks[0])), parse_given(toks[1]), secondary=True)
+            PersonReading(
+                tuple(_surname_key(toks[0])), parse_given(" ".join(toks[1:])), secondary=True
+            )
         )
     if len(toks) >= 2 and all(not _is_initials_token(t) for t in toks):
         # a bare compound surname with no given name ("García Márquez")
@@ -219,7 +240,11 @@ def _aliases(text: str) -> frozenset[str]:
 
 
 def _org_name(text: str) -> str:
-    return " ".join(_surname_key(re.sub(r"\([^)]*\)", " ", text)))
+    """Organization name for comparison. A parenthesized acronym is an alias and
+    is set aside ("World Health Organization (WHO)"); any other parenthesis is a
+    qualifier and stays ("University of California (Berkeley)")."""
+    without_alias = re.sub(r"\(\s*[A-Z][A-Z0-9&.\-]*\s*\)", " ", text)
+    return " ".join(_surname_key(re.sub(r"[()]", " ", without_alias)))
 
 
 def record_author(a: Author) -> RecordAuthor:
@@ -227,9 +252,8 @@ def record_author(a: Author) -> RecordAuthor:
         text = a.literal or a.name
         return RecordAuthor((), _org_name(text), True, _aliases(text))
     if a.family:
-        return RecordAuthor(
-            (PersonReading(tuple(_surname_key(a.family)), parse_given(a.given)),), "", True
-        )
+        given = parse_given(a.given, "no_vowel")
+        return RecordAuthor((PersonReading(tuple(_surname_key(a.family)), given),), "", True)
     if _ORG_WORDS.search(a.name):
         return RecordAuthor((), _org_name(a.name), False, _aliases(a.name))
     parsed = parse_cited(a.name)
@@ -288,11 +312,11 @@ def compare_person(cited: PersonReading, record: PersonReading) -> AuthorState:
 
 def compare_author(cited: CitedAuthor, record: RecordAuthor) -> AuthorState:
     if record.organization:
+        if cited.literal and cited.literal == record.organization:
+            return "exact"  # "IBGE", "Petrobras": same literal name
         if cited.organization:
-            if cited.organization == record.organization:
-                return "exact"
-            if cited.aliases & record.aliases:
-                return "compatible"
+            # Both names are spelled out: they decide. A shared alias does not
+            # make "University of Cambridge (UC)" the University of Chicago.
             return "conflict"
         if cited.acronym:
             # A bare acronym only matches an alias the record itself documents;
@@ -332,7 +356,10 @@ def split_cited_authors(author: str) -> list[list[str]]:
     if ";" in text:
         return [clean(text.split(";"))]
     if _ORG_WORDS.search(text):
-        return [[text]]
+        # "and"/"e" belong to names like "Food and Drug Administration"; "&" may
+        # join an organization and a person ("University of Oxford & Smith, J.")
+        amp = clean(re.split(r"\s*&\s*", text))
+        return [[text], amp] if len(amp) > 1 else [[text]]
     strict = clean(re.split(r"\s*&\s*|\s+and\s+", text))
     loose = clean([q for p in strict for q in re.split(r"\s+e\s+|\s+y\s+", p)])
     return [strict, loose] if loose != strict else [strict]
@@ -361,32 +388,38 @@ def _compare_split(
     records = [record_author(a) for a in record_authors if a.name.strip() or a.family]
     if not records:
         return "unknown", "record has no authors"
-    used: set[int] = set()
-    worst: AuthorState = "exact"
-    for c in cited:
-        found: AuthorState | None = None
-        undecided = False
-        for i, r in enumerate(records):
-            if i in used:
-                continue
-            st = compare_author(c, r)
-            if st in ("exact", "compatible"):
-                used.add(i)
-                found = st
-                break
-            undecided = undecided or st == "unknown"
-        if found is None:
-            if undecided:
+    states = [[compare_author(c, r) for r in records] for c in cited]
+    for allowed, result in ((("exact",), "exact"), (("exact", "compatible"), "compatible")):
+        if _full_matching(states, allowed):
+            detail = (
+                "all cited authors found"
+                if result == "exact"
+                else "cited authors found, partially (initials, name order or compound surname)"
+            )
+            return result, detail  # type: ignore[return-value]
+    for c, row in zip(cited, states, strict=True):
+        if not any(st in ("exact", "compatible") for st in row):
+            if "unknown" in row:
                 # e.g. a bare acronym the record does not list: no proof either way
                 return "unknown", f"{c.raw!r} cannot be checked against the record's authors"
             if truncated:
                 return "unknown", f"{c.raw!r} not among the record's (truncated) authors"
             return "conflict", f"{c.raw!r} is not among the record's authors"
-        if found == "compatible":
-            worst = "compatible"
-    return (
-        worst,
-        "all cited authors found"
-        if worst == "exact"
-        else "cited authors found, partially (initials, name order or compound surname)",
-    )
+    return "conflict", "the cited authors cannot each be matched to a different record author"
+
+
+def _full_matching(states: list[list[AuthorState]], allowed: tuple[str, ...]) -> bool:
+    """Every cited author gets a distinct record author (Kuhn's augmenting paths),
+    so the result never depends on the order the names were given in."""
+    owner: dict[int, int] = {}
+
+    def augment(i: int, seen: set[int]) -> bool:
+        for j, st in enumerate(states[i]):
+            if st in allowed and j not in seen:
+                seen.add(j)
+                if j not in owner or augment(owner[j], seen):
+                    owner[j] = i
+                    return True
+        return False
+
+    return all(augment(i, set()) for i in range(len(states)))

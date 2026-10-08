@@ -83,10 +83,25 @@ def responses(case: dict, raw: dict[str, dict]) -> tuple[dict, dict]:
     )
 
 
-def _transport(body: dict, host: str, param: str) -> httpx.MockTransport:
+def _transport(
+    body: dict, host: str, param: str, expected: str, refusals: list[str]
+) -> httpx.MockTransport:
+    """Answers exactly the search the verifier must make: GET, https, this host
+    and path, the expected query text, and no year filter. Anything else is
+    refused and recorded, so it fails the case even if the verifier recovers."""
+
     def handler(req: httpx.Request) -> httpx.Response:
-        if req.url.host == host and req.url.path == "/works" and param in req.url.params:
+        ok = (
+            req.method == "GET"
+            and req.url.scheme == "https"
+            and req.url.host == host
+            and req.url.path == "/works"
+            and req.url.params.get(param) == expected
+            and "filter" not in req.url.params
+        )
+        if ok:
             return httpx.Response(200, json=body)
+        refusals.append(f"{req.method} {req.url}")
         raise AssertionError(f"unregistered request: {req.method} {req.url}")
 
     return httpx.MockTransport(handler)
@@ -121,18 +136,22 @@ async def run(split: str, limit: int | None, verbose: bool) -> dict:
     by_transformation: dict[str, Counter] = {}
     for case in cases:
         cr_body, oa_body = responses(case, raw)
+        refusals: list[str] = []
+        cr_query = f"{case['author']} {case['title']}".strip()
         pool.crossref._client = httpx.AsyncClient(
-            transport=_transport(cr_body, "api.crossref.org", "query.bibliographic")
+            transport=_transport(
+                cr_body, "api.crossref.org", "query.bibliographic", cr_query, refusals
+            )
         )
         pool.openalex._client = httpx.AsyncClient(
-            transport=_transport(oa_body, "api.openalex.org", "search")
+            transport=_transport(oa_body, "api.openalex.org", "search", case["title"], refusals)
         )
         result = await _verify_one(
             pool.crossref, pool.openalex, case["author"], case["year"], case["title"],
             case["title_mode"],
         )  # fmt: skip
-        # a request the simulator refused is a harness bug, not a decision
-        kind = "harness" if result.get("source_errors") else classify(case, result)
+        # a request the simulator refused is a harness failure, counted on its own
+        kind = "harness" if refusals or result.get("source_errors") else classify(case, result)
         t = by_transformation.setdefault(case["transformation"], Counter())
         t["cases"] += 1
         if kind:
@@ -148,6 +167,7 @@ async def run(split: str, limit: int | None, verbose: bool) -> dict:
                 "expected_doi": case["expected_doi"],
                 "reasons": closest.get("rejected_because") or result.get("warnings") or [],
                 "source_errors": result.get("source_errors"),
+                "refused_requests": refusals,
             })  # fmt: skip
     await pool.aclose()
     total_errors = len(errors)

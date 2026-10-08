@@ -30,75 +30,37 @@ CASES = ROOT / "data"
 DISTRACTORS = 4
 MIN_PASSAGE_CONTENT = 4
 
+# Content-word specification (same list as the verifier's contract, kept as an
+# independent copy so labels never come from the verifier's code).
 _STOP = set(
+    ["a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "in", "into", "is", "it", "its", "of", "on", "or", "that", "the", "their", "this", "to", "was", "were", "with", "without", "o", "a", "os", "as", "um", "uma", "uns", "umas", "de", "da", "do", "das", "dos", "em", "no", "na", "nos", "nas", "para", "por", "com", "sem", "sobre", "e", "ou", "que", "se", "ao", "aos", "à", "às", "pelo", "pela", "pelos", "pelas", "el", "la", "los", "las", "del", "y", "en", "con", "sin", "un", "una", "unos", "unas"]
+)  # fmt: skip
+_PARTICLES = set(
     [
-        "a",
-        "an",
-        "and",
-        "are",
-        "as",
-        "at",
-        "be",
-        "by",
-        "for",
-        "from",
-        "in",
-        "into",
-        "is",
-        "it",
-        "its",
-        "of",
-        "on",
-        "or",
-        "that",
-        "the",
-        "their",
-        "this",
-        "to",
-        "was",
-        "were",
-        "with",
-        "without",
-        "o",
-        "a",
-        "os",
-        "as",
-        "um",
-        "uma",
-        "de",
         "da",
+        "de",
         "do",
         "das",
         "dos",
-        "em",
-        "no",
-        "na",
-        "nos",
-        "nas",
-        "para",
-        "por",
-        "com",
-        "sem",
-        "sobre",
-        "e",
-        "ou",
-        "que",
-        "se",
-        "ao",
-        "aos",
-        "pelo",
-        "pela",
-        "el",
-        "la",
-        "los",
-        "las",
+        "di",
+        "du",
         "del",
+        "della",
+        "der",
+        "den",
+        "van",
+        "von",
+        "la",
+        "le",
         "y",
-        "en",
-        "con",
-        "sin",
-        "un",
-        "una",
+        "e",
+        "bin",
+        "ibn",
+        "al",
+        "el",
+        "ter",
+        "ten",
+        "zu",
     ]
 )
 _CJK = re.compile("[぀-ヿ㐀-䶿一-鿿가-힯]")
@@ -237,13 +199,42 @@ class Case:
 
 
 def _retrieval(w: Work, pool: list[Work], rng: random.Random, **flags) -> dict:
-    """Which frozen records the simulated searches return, in order."""
-    others = [o.id for o in rng.sample(pool, min(DISTRACTORS, len(pool))) if o.id != w.id]
+    """Which frozen records the simulated searches return, in order. Distractors
+    never share the target's title (that would make an unplanned ambiguity)."""
+    target = _word_seq(w.full_title)
+    eligible = [
+        o
+        for o in pool
+        if o.id != w.id
+        and not _is_window(_word_seq(o.title), target)
+        and not _is_window(target, _word_seq(o.full_title))
+    ]
+    others = [o.id for o in rng.sample(eligible, min(DISTRACTORS, len(eligible)))]
     ids = [w.id, *others]
     rng.shuffle(ids)
     if flags.get("empty"):
         ids = []
     return {"crossref": ids, "openalex": list(ids), **{k: v for k, v in flags.items() if v}}
+
+
+def _surname_words(family: str) -> set[str]:
+    return {w for w in re.split(r"[\s\-'.]+", _fold(family)) if w and w not in _PARTICLES}
+
+
+def _stranger_ok(w: Work, surname: str) -> bool:
+    """A substitute surname shares no word with any surname of the work, so it
+    cannot be an allowed variant ("Silva" for "da Silva")."""
+    words = _surname_words(surname)
+    return bool(words) and all(not (words & _surname_words(p["family"])) for p in w.persons)
+
+
+def _word_seq(text: str) -> list[str]:
+    return re.findall(r"[^\W_]+", _fold(text))
+
+
+def _is_window(part: list[str], whole: list[str]) -> bool:
+    n = len(part)
+    return bool(part) and any(whole[i : i + n] == part for i in range(len(whole) - n + 1))
 
 
 def _surname_pool(works: list[Work]) -> list[str]:
@@ -346,7 +337,10 @@ def generate(works: list[Work]) -> list[Case]:
             # drop a real word (not a lone dash), so the term sequence changes
             i = rng.choice(inner)
             gap = words[:i] + words[i + 1 :]
-            add("words_not_contiguous", first, y, " ".join(gap), "auto", "insufficient")
+            gap_seq = _word_seq(" ".join(gap))
+            # skip when the deletion still leaves an allowed passage ("very very")
+            if not _is_window(gap_seq, _word_seq(full)) and gap_seq != _word_seq(w.main_title):
+                add("words_not_contiguous", first, y, " ".join(gap), "auto", "insufficient")
         add("nothing_found", first, y, full, "auto", "insufficient", empty=True)
         if w.persons:
             add("record_without_authors", first, y, full, "auto", "insufficient",
@@ -360,18 +354,23 @@ def generate(works: list[Work]) -> list[Case]:
         add("year_plus_3", first, y + 3, full, "auto", "conflict")
         if w.persons:
             p0 = w.persons[0]
-            stranger = next(s for s in rng.sample(surnames, len(surnames)) if not _has_family(w, s))
-            add("author_swapped", f"{stranger}, {_initials(p0['given']) or 'A.'}", y, full,
-                "auto", "conflict")  # fmt: skip
-            add("author_appended_stranger", f"{render(p0, 'apa')}; {stranger}, B.", y, full,
-                "auto", "conflict")  # fmt: skip
+            stranger = next(
+                (x for x in rng.sample(surnames, len(surnames)) if _stranger_ok(w, x)), None
+            )
+            if stranger:
+                add("author_swapped", f"{stranger}, {_initials(p0['given']) or 'A.'}", y, full,
+                    "auto", "conflict")  # fmt: skip
+                add("author_appended_stranger", f"{render(p0, 'apa')}; {stranger}, B.", y,
+                    full, "auto", "conflict")  # fmt: skip
             if p0["given"]:
-                first_initial = _fold(p0["given"])[0]
-                same_family = [p for p in w.persons if _fold(p["family"]) == _fold(p0["family"])]
-                used = {_fold(p["given"])[:1] for p in same_family if p["given"]}
-                wrong = next(c for c in "zqxkwvjy" if c != first_initial and c not in used)
-                add("initial_conflict", f"{p0['family']}, {wrong.upper()}.", y, full, "auto",
-                    "conflict")  # fmt: skip
+                # initials taken by anyone whose surname could be read as p0's
+                fam = _surname_words(p0["family"])
+                related = [p for p in w.persons if _surname_words(p["family"]) & fam]
+                used = {_fold(p["given"])[:1] for p in related if p["given"]}
+                wrong = next((c for c in "zqxkwvjy" if c not in used), None)
+                if wrong:
+                    add("initial_conflict", f"{p0['family']}, {wrong.upper()}.", y, full,
+                        "auto", "conflict")  # fmt: skip
         elif w.orgs:
             others = [o for o in org_names if _fold(o) != _fold(w.orgs[0])]
             if others:

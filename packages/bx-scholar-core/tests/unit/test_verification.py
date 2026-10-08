@@ -304,3 +304,54 @@ async def test_tool_conflict_shows_closest_match(tmp_path) -> None:
     assert r["closest_match"]["match"]["doi"] == "10.1016/j.giq.2019.06.002"
     assert r["next_action"]
     await pool.aclose()
+
+
+# --- first Codex test cycle (verifier findings 1-15) ---------------------------
+
+CYCLE1_AUTHORS = [
+    ("Smith, John P.", [_a("John D. Smith", "Smith", "John D.")], "conflict"),
+    ("Li, Wanyan", [_a("WEI Li", "Li", "WEI")], "conflict"),
+    ("Smith, John D.", [_a("JD Smith", "Smith", "JD")], "exact"),
+    ("University of Cambridge (UC)", [_org("University of Chicago (UC)")], "conflict"),
+    ("University of California (Berkeley)", [_org("University of California (Davis)")], "conflict"),
+    ("Smith, J.; Smith, John", [_a("John Smith", "Smith", "John"), _a("James Smith", "Smith", "James")], "exact"),
+    ("IBGE", [_org("IBGE")], "exact"),
+    ("Petrobras", [_org("Petrobras")], "exact"),
+    ("Wang Xiao Ming", [_a("Xiao Ming Wang", "Wang", "Xiao Ming")], "compatible"),
+    ("Arruda, A. R. S.", [_a("x", "Arruda", "Angela Rebelo da Silva")], "exact"),
+    ("Arruda ARDS", [_a("x", "Arruda", "Angela Rebelo da Silva")], "exact"),
+    ("University of Oxford & Smith, J.", [_org("University of Oxford"), _a("John Smith", "Smith", "John")], "exact"),
+    ("World Health Organization (WHO)", [_org("World Health Organization")], "exact"),
+]  # fmt: skip
+
+
+@pytest.mark.parametrize(("cited", "records", "expected"), CYCLE1_AUTHORS)
+def test_cycle1_author(cited: str, records: list[Author], expected: str) -> None:
+    assert compare_authors(cited, records)[0] == expected
+
+
+@pytest.mark.parametrize(
+    ("given", "title", "mode", "expected"),
+    [
+        ("Dynamics of x > 0 in nonlinear systems", "Dynamics of x < 0 in nonlinear systems", "full", "conflict"),
+        ("IL-6 TNF-2", "Clinical effects of IL-6 TNF-2 in human tissue", "auto", "locate_only"),
+        ("がん治療研究", "かん治療研究", "full", "conflict"),
+        ("Effects of H2O on cell growth", "Effects of H<sub>2</sub>O on cell growth", "full", "full"),
+    ],
+)  # fmt: skip
+def test_cycle1_title(given: str, title: str, mode: str, expected: str) -> None:
+    assert compare_title(given, title, mode=mode).state == expected
+
+
+def test_cycle1_author_past_crossref_cut_is_not_a_conflict() -> None:
+    from bx_scholar_core.clients.crossref import _parse_item
+
+    authors = [{"given": "A", "family": f"F{i}"} for i in range(100)]
+    item = {
+        "title": ["T"],
+        "published": {"date-parts": [[2020]]},
+        "author": [*authors, {"given": "A", "family": "Target"}],
+    }
+    p = _parse_item(item)
+    assert p.authors_truncated
+    assert decide(Query("Target, A.", 2020, "T"), [("crossref", p)]).status == "insufficient"
