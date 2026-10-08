@@ -107,7 +107,7 @@ SEARCH_SOURCES: dict[str, SearchSource] = {
 PRESETS: dict[str, tuple[str, ...]] = {
     "br": ("scielo", "bdtd", "oasisbr"),
     "latam": ("scielo", "lareferencia", "oasisbr"),
-    "asia": ("cinii", "jstage", "kci"),
+    "asia": ("cinii", "jstage"),
     "bio": ("europepmc", "openalex"),
     "oa": ("core", "openalex"),
 }
