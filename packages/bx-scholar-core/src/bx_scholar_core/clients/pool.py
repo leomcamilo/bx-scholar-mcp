@@ -19,6 +19,7 @@ from bx_scholar_core.clients.arxiv import ArXivClient
 from bx_scholar_core.clients.crossref import CrossRefClient
 from bx_scholar_core.clients.europepmc import EuropePMCClient
 from bx_scholar_core.clients.openalex import OpenAlexClient
+from bx_scholar_core.clients.opencitations import OpenCitationsClient
 from bx_scholar_core.clients.scielo import SciELOClient
 from bx_scholar_core.clients.semantic_scholar import SemanticScholarClient
 from bx_scholar_core.clients.tavily import TavilyClient
@@ -97,6 +98,13 @@ class ClientPool:
     def lareferencia(self) -> LAReferenciaClient:
         ua = self.settings.user_agent
         return self._track(LAReferenciaClient(user_agent=ua, cache=self.cache))
+
+    @cached_property
+    def opencitations(self) -> OpenCitationsClient:
+        s = self.settings
+        return self._track(
+            OpenCitationsClient(s.opencitations_token, s.user_agent, cache=self.cache)
+        )
 
     async def aclose(self) -> None:
         for client in self._created:

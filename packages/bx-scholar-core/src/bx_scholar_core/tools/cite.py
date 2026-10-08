@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
+from bx_scholar_core.citations import CITATION_SOURCES, fetch_citations, parse_sources
 from bx_scholar_core.logging import get_logger
 
 if TYPE_CHECKING:
@@ -60,10 +61,16 @@ def register_cite_tools(mcp: object, pool: ClientPool) -> None:
         seed_dois: str,
         depth: int = 1,
         max_nodes: int = 100,
+        citation_sources: str = "openalex",
     ) -> str:
         """Build a citation network from seed DOIs.
         seed_dois: comma-separated DOIs. depth: 1 or 2 levels.
+        citation_sources: 'openalex' (default) or 'openalex,opencitations' to add
+        reference links only OpenCitations knows.
         Returns nodes and edges for visualization."""
+        names, unknown = parse_sources(citation_sources)
+        if unknown or not names:
+            return json.dumps({"error": f"citation_sources must be from {list(CITATION_SOURCES)}"})
 
         dois = [d.strip().replace("https://doi.org/", "") for d in seed_dois.split(",")]
         depth = min(depth, 2)
@@ -87,7 +94,7 @@ def register_cite_tools(mcp: object, pool: ClientPool) -> None:
                 nodes[doi] = node
 
                 if level < depth:
-                    ref_papers = await client.get_citations(doi, "references", per_page=10)
+                    ref_papers, _ = await fetch_citations(pool, doi, "references", 10, names)
                     for ref in ref_papers:
                         if ref.doi:
                             edges.append({"from": doi, "to": ref.doi, "type": "cites"})

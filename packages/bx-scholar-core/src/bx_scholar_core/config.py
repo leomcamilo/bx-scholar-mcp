@@ -64,6 +64,7 @@ class Settings(BaseSettings):
     # Free key (https://openalex.org/settings/api). Without one, OpenAlex counts
     # requests against a small daily budget shared by everyone on the same IP.
     openalex_api_key: str = ""
+    opencitations_token: str = ""  # optional, free: https://opencitations.net/accesstoken
 
     # Paths. Relative values resolve against project_root, not cwd. The bare
     # names (DATA_DIR, ...) are kept as aliases for configs written before the

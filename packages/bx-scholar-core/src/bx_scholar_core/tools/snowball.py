@@ -18,8 +18,13 @@ from typing import TYPE_CHECKING
 
 from rapidfuzz import fuzz
 
+from bx_scholar_core.citations import (
+    CITATION_SOURCES,
+    fetch_citations,
+    parse_sources,
+    resolve_to_doi,
+)
 from bx_scholar_core.dedup import deduplicate
-from bx_scholar_core.id_resolver import resolve_id
 from bx_scholar_core.logging import get_logger
 
 if TYPE_CHECKING:
@@ -143,16 +148,15 @@ def register_snowball_tools(mcp: object, pool: ClientPool) -> None:
     from mcp.server.fastmcp import FastMCP
 
     from bx_scholar_core.clients.crossref import _parse_item
-    from bx_scholar_core.clients.openalex import OpenAlexClient
 
     server: FastMCP = mcp  # type: ignore[assignment]
 
-    async def _seed_to_doi(client: OpenAlexClient, identifier: str) -> str | None:
-        resolved = resolve_id(identifier)
-        if resolved.id_type == "doi":
-            return resolved.value
-        paper = await client.get_work(resolved.value)
-        return paper.doi if paper and paper.doi else None
+    async def _seed_to_doi(identifier: str) -> str | None:
+        try:
+            return await resolve_to_doi(pool, identifier)
+        except Exception as exc:
+            logger.warning("snowball_seed_unresolved", seed=identifier, error=str(exc))
+            return None
 
     @server.tool(structured_output=False)
     async def snowball(
@@ -162,6 +166,7 @@ def register_snowball_tools(mcp: object, pool: ClientPool) -> None:
         max_papers: int = 200,
         min_cited_by: int = 0,
         year_from: int | None = None,
+        citation_sources: str = "openalex",
     ) -> str:
         """Snowballing for literature reviews (Wohlin method): from seed papers, iteratively
         collect backward references and/or forward citations, deduplicated, with abstracts.
@@ -170,20 +175,25 @@ def register_snowball_tools(mcp: object, pool: ClientPool) -> None:
         direction: 'references' (backward), 'citing' (forward), or 'both'.
         max_depth: BFS iterations (1-3). max_papers: global cap (<=500).
         min_cited_by / year_from: optional inclusion filters.
+        citation_sources: 'openalex' (default) or 'openalex,opencitations' to also add
+        links only OpenCitations knows (more complete, slower: one extra lookup per node).
         Returns JSON: {seeds, papers (sorted by cited_by_count), edges, stats}."""
         if direction not in ("references", "citing", "both"):
             return json.dumps({"error": "direction must be references|citing|both"})
         max_depth = max(1, min(max_depth, 3))
         max_papers = max(1, min(max_papers, 500))
         directions = ["references", "citing"] if direction == "both" else [direction]
+        names, unknown = parse_sources(citation_sources)
+        if unknown or not names:
+            return json.dumps({"error": f"citation_sources must be from {list(CITATION_SOURCES)}"})
+        source_errors: list[str] = []
 
-        client = pool.openalex
         try:
             raw_seeds = [s.strip() for s in seed_identifiers.split(",") if s.strip()][:5]
             seed_dois: list[str] = []
             skipped_seeds: list[str] = []
             for ident in raw_seeds:
-                doi = await _seed_to_doi(client, ident)
+                doi = await _seed_to_doi(ident)
                 (seed_dois if doi else skipped_seeds).append(doi or ident)
             if not seed_dois:
                 return json.dumps(
@@ -191,7 +201,15 @@ def register_snowball_tools(mcp: object, pool: ClientPool) -> None:
                 )
 
             async def fetch(doi: str, drc: str) -> list[Paper]:
-                return await client.get_citations(doi, direction=drc, per_page=PER_NODE_RESULTS)
+                found, meta = await fetch_citations(
+                    pool,
+                    doi,
+                    "citing" if drc == "citing" else "references",
+                    PER_NODE_RESULTS,
+                    names,
+                )
+                source_errors.extend(f"{doi}: {k}: {v}" for k, v in meta.get("errors", {}).items())
+                return found
 
             papers, edges, level_stats = await snowball_bfs(
                 fetch,
@@ -215,6 +233,8 @@ def register_snowball_tools(mcp: object, pool: ClientPool) -> None:
                         "with_abstract": with_abstract,
                         "edges": len(edges),
                         "levels": level_stats,
+                        "citation_sources": names,
+                        "source_errors": source_errors[:20],
                     },
                     "papers": [p.model_dump(exclude_defaults=True) for p in papers],
                     "edges": edges,
