@@ -20,8 +20,7 @@ from bx_scholar_workflow.skills.loader import register_all_skills
 def create_server() -> FastMCP:
     """Create the BX-Scholar Workflow MCP server.
 
-    Composes core tools (19) + workflow prompts (8) + skill resources (21)
-    into a single MCP server.
+    Composes core tools + workflow prompts + skill resources into a single MCP server.
     """
     settings = load_settings()
     setup_logging(level=settings.log_level, fmt=settings.log_format)
@@ -47,7 +46,12 @@ def create_server() -> FastMCP:
     register_all_prompts(server)
     register_all_skills(server)
 
-    logger.info("server_ready", tools=19, prompts=8, skills=21)
+    logger.info(
+        "server_ready",
+        tools=len(server._tool_manager.list_tools()),
+        prompts=len(server._prompt_manager.list_prompts()),
+        skills=len(server._resource_manager.list_resources()),
+    )
     return server
 
 

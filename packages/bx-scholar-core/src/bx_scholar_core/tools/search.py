@@ -6,19 +6,13 @@ import asyncio
 import json
 from typing import TYPE_CHECKING
 
-from bx_scholar_core.clients.arxiv import ArXivClient
-from bx_scholar_core.clients.crossref import CrossRefClient
-from bx_scholar_core.clients.openalex import OpenAlexClient
-from bx_scholar_core.clients.scielo import SciELOClient
-from bx_scholar_core.clients.semantic_scholar import SemanticScholarClient
-from bx_scholar_core.clients.tavily import TavilyClient
-from bx_scholar_core.config import Settings
 from bx_scholar_core.dedup import deduplicate
 from bx_scholar_core.logging import get_logger
 from bx_scholar_core.models.paper import Paper
+from bx_scholar_core.sources import PRESETS, SEARCH_SOURCES, SearchQuery, expand_sources
 
 if TYPE_CHECKING:
-    from bx_scholar_core.cache import CacheStore
+    from bx_scholar_core.clients.pool import ClientPool
 
 logger = get_logger(__name__)
 
@@ -35,13 +29,65 @@ def _papers_to_json(papers: list[Paper], total: int = 0, meta: dict | None = Non
     return json.dumps(result, ensure_ascii=False, indent=2)
 
 
-def register_search_tools(mcp: object, settings: Settings, cache: CacheStore | None = None) -> None:
+async def run_search(
+    pool: ClientPool, source_names: list[str], query: SearchQuery
+) -> tuple[list[Paper], int, dict[str, object]]:
+    """Query the named sources concurrently. One failing source never fails the rest;
+    its error is reported in meta["errors"] instead of being swallowed."""
+    runnable = []
+    skipped: dict[str, str] = {}
+    for name in source_names:
+        source = SEARCH_SOURCES[name]
+        reason = source.missing_config(pool)
+        if reason:
+            skipped[name] = reason
+        else:
+            runnable.append(source)
+
+    results = await asyncio.gather(*(s.run(pool, query) for s in runnable), return_exceptions=True)
+
+    papers: list[Paper] = []
+    total = 0
+    per_source: dict[str, int] = {}
+    errors: dict[str, str] = {}
+    for source, result in zip(runnable, results, strict=True):
+        if isinstance(result, BaseException):
+            errors[source.name] = f"{type(result).__name__}: {result}"
+            logger.warning("search_source_failed", source=source.name, error=str(result))
+            continue
+        found, count = result
+        papers.extend(found)
+        total += count
+        per_source[source.name] = len(found)
+
+    deduped = deduplicate(papers)
+    meta: dict[str, object] = {
+        "per_source": per_source,
+        "duplicates_removed": len(papers) - len(deduped),
+    }
+    if errors:
+        meta["errors"] = errors
+    if skipped:
+        meta["skipped"] = skipped
+    return deduped, total, meta
+
+
+def register_search_tools(mcp: object, pool: ClientPool) -> None:
     """Register search-related tools on the MCP server."""
     from mcp.server.fastmcp import FastMCP
 
     server: FastMCP = mcp  # type: ignore[assignment]
+    presets = "; ".join(f"{k}={'+'.join(v)}" for k, v in PRESETS.items())
+    search_papers_doc = (
+        "Search academic papers across multiple sources with automatic deduplication.\n"
+        f"sources: comma-separated list from {', '.join(SEARCH_SOURCES)}, "
+        f"or a preset ({presets}).\n"
+        "ArXiv results are always marked as grey literature (not peer-reviewed). "
+        'A source that fails or lacks its API key is listed under "errors" or "skipped" '
+        "instead of silently returning nothing."
+    )
 
-    @server.tool(structured_output=False)
+    @server.tool(structured_output=False, description=search_papers_doc)
     async def search_papers(
         query: str,
         sources: str = "openalex,crossref",
@@ -51,112 +97,17 @@ def register_search_tools(mcp: object, settings: Settings, cache: CacheStore | N
         sort: str = "cited_by_count:desc",
         per_page: int = 25,
     ) -> str:
-        """Search academic papers across multiple sources with automatic deduplication.
-        sources: comma-separated list from openalex, crossref, arxiv, scielo, semantic_scholar, tavily.
-        ArXiv results are always marked as grey literature (not peer-reviewed)."""
-        source_list = [s.strip().lower() for s in sources.split(",")]
-        all_papers: list[Paper] = []
-        total = 0
-        source_counts: dict[str, int] = {}
-
-        async def _search_openalex() -> None:
-            nonlocal total
-            client = OpenAlexClient(settings.polite_email, settings.user_agent, cache=cache)
-            try:
-                papers, count = await client.search(
-                    query, year_from, year_to, journal_issn, sort=sort, per_page=per_page
-                )
-                all_papers.extend(papers)
-                total += count
-                source_counts["openalex"] = len(papers)
-            finally:
-                await client.close()
-
-        async def _search_crossref() -> None:
-            nonlocal total
-            client = CrossRefClient(settings.polite_email, settings.user_agent, cache=cache)
-            try:
-                papers, count = await client.search(query, year_from, year_to, rows=per_page)
-                all_papers.extend(papers)
-                total += count
-                source_counts["crossref"] = len(papers)
-            finally:
-                await client.close()
-
-        async def _search_arxiv() -> None:
-            client = ArXivClient(user_agent=settings.user_agent, cache=cache)
-            try:
-                papers = await client.search(query, max_results=min(per_page, 20))
-                all_papers.extend(papers)
-                source_counts["arxiv"] = len(papers)
-            finally:
-                await client.close()
-
-        async def _search_scielo() -> None:
-            client = SciELOClient(settings.polite_email, settings.user_agent, cache=cache)
-            try:
-                papers = await client.search(query, year_from, year_to, max_results=per_page)
-                all_papers.extend(papers)
-                source_counts["scielo"] = len(papers)
-            finally:
-                await client.close()
-
-        async def _search_s2() -> None:
-            nonlocal total
-            year_str = None
-            if year_from and year_to:
-                year_str = f"{year_from}-{year_to}"
-            elif year_from:
-                year_str = f"{year_from}-"
-            client = SemanticScholarClient(settings.s2_api_key, settings.user_agent, cache=cache)
-            try:
-                papers, count = await client.search(query, year=year_str, limit=per_page)
-                all_papers.extend(papers)
-                total += count
-                source_counts["semantic_scholar"] = len(papers)
-            finally:
-                await client.close()
-
-        async def _search_tavily() -> None:
-            if not settings.tavily_api_key:
-                return
-            client = TavilyClient(settings.tavily_api_key, settings.user_agent, cache=cache)
-            try:
-                results = await client.search(query, max_results=min(per_page, 10))
-                source_counts["tavily"] = len(results)
-                # Tavily returns dicts, not Papers — include as-is in meta
-            finally:
-                await client.close()
-
-        tasks_map = {
-            "openalex": _search_openalex,
-            "crossref": _search_crossref,
-            "arxiv": _search_arxiv,
-            "scielo": _search_scielo,
-            "semantic_scholar": _search_s2,
-            "tavily": _search_tavily,
-        }
-
-        tasks = [tasks_map[s]() for s in source_list if s in tasks_map]
-        await asyncio.gather(*tasks, return_exceptions=True)
-
-        deduped = deduplicate(all_papers)
-        logger.info(
-            "search_complete",
-            query=query,
-            sources=source_list,
-            raw=len(all_papers),
-            deduped=len(deduped),
+        names, unknown = expand_sources(sources)
+        papers, total, meta = await run_search(
+            pool,
+            names,
+            SearchQuery(query, year_from, year_to, per_page, journal_issn, sort),
         )
-        return _papers_to_json(
-            deduped,
-            total=total,
-            meta={
-                "sources_queried": source_list,
-                "per_source": source_counts,
-                "duplicates_removed": len(all_papers) - len(deduped),
-            },
-        )
+        logger.info("search_complete", query=query, sources=names, returned=len(papers), **meta)
+        meta = {"sources_queried": names, **meta}
+        if unknown:
+            meta["unknown_sources"] = unknown
+        return _papers_to_json(papers, total=total, meta=meta)
 
     @server.tool(structured_output=False)
     async def search_journal_papers(
@@ -168,15 +119,11 @@ def register_search_tools(mcp: object, settings: Settings, cache: CacheStore | N
     ) -> str:
         """Search papers within a specific journal by ISSN.
         Essential for finding papers from the target journal for calibration."""
-        client = OpenAlexClient(settings.polite_email, settings.user_agent)
-        try:
-            papers, total = await client.search(
-                query or "",
-                year_from=year_from,
-                year_to=year_to,
-                journal_issn=issn,
-                per_page=per_page,
-            )
-            return _papers_to_json(papers, total, meta={"journal_issn": issn})
-        finally:
-            await client.close()
+        papers, total = await pool.openalex.search(
+            query or "",
+            year_from=year_from,
+            year_to=year_to,
+            journal_issn=issn,
+            per_page=per_page,
+        )
+        return _papers_to_json(papers, total, meta={"journal_issn": issn})

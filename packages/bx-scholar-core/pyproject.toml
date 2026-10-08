@@ -69,3 +69,5 @@ packages = ["src/bx_scholar_core"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = ["live: hits the real APIs; opt-in with `pytest -m live`"]
+addopts = "-m 'not live'"

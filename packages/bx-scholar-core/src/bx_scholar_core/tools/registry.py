@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from mcp.server.fastmcp import FastMCP
 
+from bx_scholar_core.clients.pool import ClientPool
 from bx_scholar_core.config import Settings
 from bx_scholar_core.rankings.service import RankingService
 from bx_scholar_core.tools.cite import register_cite_tools
@@ -25,12 +26,15 @@ def register_all_tools(
     settings: Settings,
     ranking_service: RankingService,
     cache: CacheStore | None = None,
-) -> None:
-    """Register all core MCP tools on the server."""
-    register_search_tools(server, settings, cache)
-    register_get_tools(server, settings, cache)
+    pool: ClientPool | None = None,
+) -> ClientPool:
+    """Register all core MCP tools on the server. Returns the client pool they share."""
+    pool = pool or ClientPool(settings, cache)
+    register_search_tools(server, pool)
+    register_get_tools(server, pool)
     register_rank_tools(server, settings, ranking_service)
-    register_cite_tools(server, settings, cache)
-    register_verify_tools(server, settings, cache)
-    register_fulltext_tools(server, settings, cache)
-    register_snowball_tools(server, settings, cache)
+    register_cite_tools(server, pool)
+    register_verify_tools(server, pool)
+    register_fulltext_tools(server, pool)
+    register_snowball_tools(server, pool)
+    return pool

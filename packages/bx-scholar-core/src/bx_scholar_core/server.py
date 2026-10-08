@@ -43,7 +43,7 @@ def create_server() -> FastMCP:
 
     logger.info(
         "server_ready",
-        tools=19,
+        tools=len(server._tool_manager.list_tools()),
         data_dir=str(settings.data_dir),
         cache_enabled=settings.cache_enabled,
     )

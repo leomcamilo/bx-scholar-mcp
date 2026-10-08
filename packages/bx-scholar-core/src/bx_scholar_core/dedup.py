@@ -8,35 +8,43 @@ from bx_scholar_core.models.paper import Paper
 
 
 def deduplicate(papers: list[Paper]) -> list[Paper]:
-    """Deduplicate papers by DOI (exact) then by title similarity + year.
+    """Deduplicate papers by DOI or PMID (exact) then by title similarity + year.
 
-    For papers with the same DOI: keeps the one with more metadata.
-    For papers without DOI: matches if title similarity >90% AND same year.
+    For papers with the same DOI (or PMID, when there is no DOI): keeps the one
+    with more metadata. For papers with neither: matches if title similarity
+    >90% AND same year.
     """
-    seen_dois: dict[str, Paper] = {}
-    no_doi: list[Paper] = []
+    seen_ids: dict[str, Paper] = {}
+    no_id: list[Paper] = []
     result: list[Paper] = []
 
     for paper in papers:
-        doi = paper.doi.lower().strip()
-        if doi:
-            if doi in seen_dois:
-                existing = seen_dois[doi]
+        key = _id_key(paper)
+        if key:
+            if key in seen_ids:
+                existing = seen_ids[key]
                 if _metadata_score(paper) > _metadata_score(existing):
-                    seen_dois[doi] = paper
+                    seen_ids[key] = paper
             else:
-                seen_dois[doi] = paper
+                seen_ids[key] = paper
         else:
-            no_doi.append(paper)
+            no_id.append(paper)
 
-    result.extend(seen_dois.values())
+    result.extend(seen_ids.values())
 
-    # Deduplicate no-DOI papers against DOI papers and each other
-    for paper in no_doi:
+    # Deduplicate id-less papers against the others and each other
+    for paper in no_id:
         if not _is_duplicate(paper, result):
             result.append(paper)
 
     return result
+
+
+def _id_key(paper: Paper) -> str:
+    doi = paper.doi.lower().strip()
+    if doi:
+        return f"doi:{doi}"
+    return f"pmid:{paper.pmid}" if paper.pmid else ""
 
 
 def _metadata_score(paper: Paper) -> int:
@@ -53,6 +61,8 @@ def _metadata_score(paper: Paper) -> int:
     if paper.journal:
         score += 1
     if paper.year:
+        score += 1
+    if paper.mesh or paper.pmid:
         score += 1
     return score
 
