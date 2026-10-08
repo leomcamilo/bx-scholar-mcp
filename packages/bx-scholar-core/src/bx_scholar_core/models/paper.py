@@ -63,9 +63,13 @@ class Paper(BaseModel):
     """Canonical paper representation, independent of source API."""
 
     title: str
+    # Crossref keeps the subtitle apart; the full title is "title: subtitle".
+    subtitle: str = ""
     doi: str = ""
     year: int | None = None
     authors: list[Author] = Field(default_factory=list)
+    # The source holds more authors than it returned (OpenAlex stops at 100).
+    authors_truncated: bool = False
     abstract: str = ""
     cited_by_count: int = 0
     source_type: SourceType = "unknown"

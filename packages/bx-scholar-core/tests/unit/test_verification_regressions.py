@@ -1,17 +1,19 @@
-"""Regression table for citation_match, from three Codex (gpt-6-astra) reviews.
+"""Tests for the citation verifier (bx_scholar_core.verification).
 
-Each row: (case, record, cited author, title fragment, verified?). The record
-title and year always agree with the query unless the case is about the title,
-so the row isolates one decision. Rows marked R1-R3 reproduce a defect a review
-found; the rest are controls that keep legitimate citations verified.
+REGRESSION_CASES are the 88 rows collected over five Codex reviews of the old
+matcher, re-run through the new verifier. Their expectation is unchanged
+except where the contract changed on purpose (CONTRACT_CHANGES): a title must
+now be the full title, the main title or a literal contiguous passage of 4+
+content words; a typo no longer confirms; a bare acronym is not proof of an
+organization. None of the old negatives may become verified.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from bx_scholar_core.citation_match import score_candidate
 from bx_scholar_core.models.paper import Author, Paper
+from bx_scholar_core.verification.decide import Query, decide
 
 
 def P(t: str, a: list[str], y: int = 2020) -> Paper:
@@ -19,7 +21,7 @@ def P(t: str, a: list[str], y: int = 2020) -> Paper:
 
 
 T = "Urban mobility prediction with graph networks"
-F = "urban mobility prediction graph networks"
+F = "urban mobility prediction graph networks"  # old fragment; not contiguous
 EN = "\u2013"
 EM = "\u2014"
 
@@ -323,9 +325,30 @@ CASES = [
 ]
 
 
+# Rows whose expectation changed with the contract, and why.
+CONTRACT_CHANGES = {
+    "R2 WHO bare": "an acronym the record does not list proves nothing either way",
+    "CJK fragment": "a 4-character CJK passage is below the 6-character minimum",
+    "typo": "a misspelled title locates candidates but does not confirm",
+    "year range in title": "fragment skips 'in': not a contiguous passage",
+    "Phase 2 vs Phase II": "fragment skips 'A' and 'of': not a contiguous passage",
+    "real Mergel paper": "fragment skips 'Results from': not a contiguous passage",
+    "R4-7 after 10": "fragment skips 'of': not a contiguous passage",
+}
+
+
 @pytest.mark.parametrize(
-    ("paper", "cited", "fragment", "expected"), [c[1:] for c in CASES], ids=[c[0] for c in CASES]
+    ("name", "paper", "cited", "fragment", "expected"), CASES, ids=[c[0] for c in CASES]
 )
-def test_case(paper: Paper, cited: str, fragment: str, expected: bool) -> None:
-    m = score_candidate(paper, cited, paper.year, fragment)
-    assert m.verified is expected, (m.checks(), m.reasons())
+def test_regression_case(
+    name: str, paper: Paper, cited: str, fragment: str, expected: bool
+) -> None:
+    # Author rows used the non-contiguous F; they test authorship, so give the title.
+    frag = T if fragment == F else fragment
+    d = decide(Query(cited, paper.year, frag), [("crossref", paper)])
+    if name in CONTRACT_CHANGES:
+        assert d.status == "insufficient", CONTRACT_CHANGES[name]
+    elif expected:
+        assert d.status == "verified", d.best.reasons() if d.best else None
+    else:
+        assert d.status != "verified", d.best.checks() if d.best else None

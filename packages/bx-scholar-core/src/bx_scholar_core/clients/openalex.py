@@ -56,6 +56,8 @@ def _parse_work(work: dict[str, Any]) -> Paper:
         source_type = "unknown"
 
     return Paper(
+        authors_truncated=bool(work.get("is_authors_truncated"))
+        or len(work.get("authorships") or []) > MAX_AUTHORS,
         title=work.get("title") or "",
         doi=doi_raw,
         year=work.get("publication_year"),

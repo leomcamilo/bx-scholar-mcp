@@ -1,0 +1,306 @@
+"""Unit tests for the citation verifier: titles, authors, decision, tool."""
+
+from __future__ import annotations
+
+import json
+
+import httpx
+import pytest
+from mcp.server.fastmcp import FastMCP
+
+from bx_scholar_core.config import Settings
+from bx_scholar_core.models.paper import Author, Paper
+from bx_scholar_core.rankings.service import RankingService
+from bx_scholar_core.tools.registry import register_all_tools
+from bx_scholar_core.verification.decide import Query, decide
+from bx_scholar_core.verification.names import compare_authors
+from bx_scholar_core.verification.titles import compare_title
+
+EN = "–"  # noqa: RUF001 — en dash on purpose
+EM = "—"
+SUB = "Results from expert interviews"
+
+# (given title, record title, record subtitle, expected state)
+TITLE_CASES = [
+    ("IL-6 effects at 6 hours", "IL-8 effects at 6 hours", "", "locate_only"),
+    ("IL 6 effects at 8 hours", "IL 8 effects at 6 hours", "", "locate_only"),
+    ("H2O treatment", "H2O2 treatment", "", "locate_only"),
+    ("H2O treatment of soils in rural areas", "CH2O treatment of soils in rural areas", "", "locate_only"),
+    ("C2H6O oxidation", "C6H2O oxidation", "", "locate_only"),
+    ("Effects of IL-6 on cell growth", "Effects of IL-6R on cell growth", "", "locate_only"),
+    ("COVID-19 pandemic", f"COVID{EN}19 pandemic", "", "full"),
+    ("COVID-19 pandemic", "COVID 19 pandemic", "", "full"),
+    ("COVID-19 pandemic", "COVID19 pandemic", "", "full"),
+    ("Effects of interleukin 6 on cell growth", "Effects of interleukin-6 on cell growth", "", "full"),
+    ("A 3-D model of urban growth", "A 3D model of urban growth", "", "full"),
+    ("Phase I clinical trial", "Phase II clinical trial", "", "locate_only"),
+    ("Hepatitis A prevalence in a rural population", "Hepatitis B prevalence in a rural population", "", "locate_only"),
+    ("Tratamento com anticoagulantes em pacientes idosos", "Tratamento sem anticoagulantes em pacientes idosos", "", "locate_only"),
+    ("Effects of medication on hypertension", "Effects of medication on hypotension", "", "locate_only"),
+    ("Dogs bite people", "People bite dogs", "", "locate_only"),
+    ("Urban mobility prediction with graph networks", "Urban mobility prediction with neural networks", "", "locate_only"),
+    ("What are the limits", f"What are the limits{EM}a systematic review", "", "main"),
+    ("Defining digital transformation", "Defining digital transformation", SUB, "main"),
+    ("defining digital transformation results from expert interviews", "Defining digital transformation", SUB, "full"),
+    ("digital transformation results from expert", "Defining digital transformation", SUB, "fragment"),
+    ("digital transformation", "Defining digital transformation", SUB, "locate_only"),
+    ("Leviathan", "Leviathan", "", "full"),
+    ("城市交通预测", "城市交通预测研究综述", "", "fragment"),
+    ("城市", "城市", "", "full"),
+    ("城市交通预测COVID-19", "城市交通预测COVID-18", "", "locate_only"),
+    ("Gestao publica e cidades inteligentes no Brasil", "Gestão pública e cidades inteligentes no Brasil", "", "full"),
+    ("Cancer risk: 10 years of follow-up", "Cancer risk 10 years of follow-up", "", "full"),
+    ("Smart cities &amp; mobility", "Smart cities & mobility", "", "full"),
+]  # fmt: skip
+
+
+@pytest.mark.parametrize(("given", "title", "subtitle", "expected"), TITLE_CASES)
+def test_title(given: str, title: str, subtitle: str, expected: str) -> None:
+    assert compare_title(given, title, subtitle).state == expected
+
+
+def test_full_mode_turns_difference_into_conflict() -> None:
+    assert (
+        compare_title("Effects on hypotension", "Effects on hypertension", mode="full").state
+        == "conflict"
+    )
+    assert compare_title("Effects on hypotension", "Effects on hypertension").state == "locate_only"
+
+
+def _a(name: str, family: str = "", given: str = "", **kw) -> Author:
+    st = "source" if family else "none"
+    return Author(name=name, family=family, given=given, structure_source=st, **kw)
+
+
+def _org(name: str) -> Author:
+    return Author(name=name, literal=name, kind="organization", structure_source="source")
+
+
+# (cited author, record authors, expected state)
+AUTHOR_CASES = [
+    ("John Jones", [_a("John J. Smith")], "conflict"),
+    ("Smith JD", [_a("John David Smith", "Smith", "John David")], "exact"),
+    ("Smith JA", [_a("John Andrew Smith", "Smith", "John Andrew")], "exact"),
+    ("Smith, J.A.", [_a("John Andrew Smith", "Smith", "John Andrew")], "exact"),
+    ("Smith, J. P.", [_a("John David Smith", "Smith", "John David")], "conflict"),
+    ("Mill, John Stuart", [_a("John James Mill", "Mill", "John James")], "conflict"),
+    ("Kim, M. P.", [_a("Min-Jun Kim", "Kim", "Min-Jun")], "conflict"),
+    ("Kim M-J", [_a("Min-Jun Kim", "Kim", "Min-Jun")], "exact"),
+    ("Kim, Min-Jun", [_a("Minjun Kim", "Kim", "Minjun")], "exact"),
+    ("Robert Johnson", [_a("Robert Johnston", "Johnston", "Robert")], "conflict"),
+    ("Camilo da Silva, L.", [_a("Leonardo C. Silva", "Silva", "Leonardo C.")], "compatible"),
+    ("Silva, L.", [_a("Leonardo Camilo da Silva", "Camilo da Silva", "Leonardo")], "compatible"),
+    ("da Silva, L.", [_a("Leonardo da Silva", "da Silva", "Leonardo")], "exact"),
+    ("Wang Wei", [_a("W. Wang")], "compatible"),
+    ("Li, Wanyan", [_a("Wei Li", "Li", "Wei")], "conflict"),
+    ("Li, Wanyan", [_a("WEI Li")], "conflict"),
+    ("Li, W.", [_a("Wei Li", "Li", "Wei")], "exact"),
+    ("Li, W.", [_a("Wei LI")], "compatible"),
+    ("García Márquez", [_a("Gabriel García Márquez")], "compatible"),
+    ("University of Cambridge", [_org("University of Chicago")], "conflict"),
+    ("WHO", [_a("William Henry Oswald")], "conflict"),
+    ("WHO", [_org("World Health Organization")], "unknown"),
+    ("WHO", [_org("World Health Organization (WHO)")], "compatible"),
+    ("World Health Organization", [_org("World Health Organization")], "exact"),
+    ("Instituto Brasileiro de Geografia e Estatística", [_org("Instituto Brasileiro de Geografia e Estatística")], "exact"),
+    ("Silva, L.; Souza, A.", [_a("Ana Souza", "Souza", "Ana"), _a("Leo Silva", "Silva", "Leo")], "exact"),
+    ("Silva, L.; Silva, L.", [_a("Leo Silva", "Silva", "Leo")], "conflict"),
+    ("Mergel et al.", [_a("Ines Mergel", "Mergel", "Ines")], "exact"),
+    ("Jane Doe", [_a("John Doe", "Doe", "John")], "conflict"),
+    ("John Smith", [_a("J. D. Smith", "Smith", "J. D.")], "exact"),
+    ("SILVA, L. C.", [_a("Leonardo Camilo Silva", "Silva", "Leonardo Camilo")], "exact"),
+    ("Rosário AT", [_a("Ana Teresa Rosário", "Rosário", "Ana Teresa")], "exact"),
+    ("Rosário, A.T.", [_a("Ana Teresa Rosário", "Rosário", "Ana Teresa")], "exact"),
+]  # fmt: skip
+
+
+@pytest.mark.parametrize(("cited", "records", "expected"), AUTHOR_CASES)
+def test_author(cited: str, records: list[Author], expected: str) -> None:
+    state, detail = compare_authors(cited, records)
+    assert state == expected, detail
+
+
+def test_author_past_the_tenth_position() -> None:
+    records = [_a(f"Person {i}", f"Family{i}", "Ana") for i in range(15)]
+    assert compare_authors("Family12, A.", records)[0] == "exact"
+
+
+def test_absent_author_in_truncated_list_is_unknown_not_conflict() -> None:
+    assert (
+        compare_authors("Nobody, X.", [_a("Ana Souza", "Souza", "Ana")], truncated=True)[0]
+        == "unknown"
+    )
+
+
+# --- decision ----------------------------------------------------------------
+
+TITLE = "Defining digital transformation"
+MERGEL = Paper(
+    title=TITLE,
+    subtitle=SUB,
+    doi="10.1016/j.giq.2019.06.002",
+    year=2019,
+    authors=[_a("Ines Mergel", "Mergel", "Ines"), _a("Noella Edelmann", "Edelmann", "Noella")],
+)
+FULL = f"{TITLE}: {SUB}"
+
+
+def _decide(author: str, year: int | None, title: str, *papers: tuple[str, Paper], mode="auto"):
+    return decide(Query(author, year, title, mode), list(papers))
+
+
+def test_verified_high() -> None:
+    d = _decide("Mergel, I.", 2019, FULL, ("crossref", MERGEL))
+    assert d.status == "verified"
+    assert d.best.confidence == "high"
+
+
+def test_year_off_by_one_is_medium_with_warning() -> None:
+    d = _decide("Mergel", 2020, FULL, ("crossref", MERGEL))
+    assert d.status == "verified"
+    assert d.best.confidence == "medium"
+    assert any("year differs by 1" in w for w in d.best.warnings())
+
+
+def test_year_off_by_two_is_conflict() -> None:
+    d = _decide("Mergel", 2021, FULL, ("crossref", MERGEL))
+    assert d.status == "conflict"
+
+
+def test_wrong_author_on_identified_work_is_conflict() -> None:
+    d = _decide("Smith, J.", 2019, FULL, ("crossref", MERGEL))
+    assert d.status == "conflict"
+    assert "author" in " ".join(d.best.reasons())
+
+
+def test_same_title_other_authors_and_year_is_insufficient_not_conflict() -> None:
+    """Found live: "Guerra dos lugares" (Rolnik 2015, a book without DOI) matched
+    only a homonymous work by other authors in another year."""
+    other = Paper(title="Guerra dos lugares", year=2017, authors=[_a("Ana Souza", "Souza", "Ana")])
+    d = _decide("Rolnik, R.", 2015, "Guerra dos lugares", ("crossref", other))
+    assert d.status == "insufficient"
+    assert "same title" in d.next_action
+
+
+def test_partial_title_is_insufficient() -> None:
+    d = _decide("Mergel", 2019, "digital transformation", ("crossref", MERGEL))
+    assert d.status == "insufficient"
+    assert "full title" in d.next_action
+
+
+def test_record_without_authors_is_insufficient() -> None:
+    bare = MERGEL.model_copy(update={"authors": []})
+    assert _decide("Mergel", 2019, FULL, ("crossref", bare)).status == "insufficient"
+
+
+def test_record_without_year_is_insufficient() -> None:
+    bare = MERGEL.model_copy(update={"year": None})
+    assert _decide("Mergel", 2019, FULL, ("crossref", bare)).status == "insufficient"
+
+
+def test_missing_field_enriched_from_same_doi() -> None:
+    no_year = MERGEL.model_copy(update={"year": None})
+    oa = MERGEL.model_copy(update={"authors": [_a("Ines Mergel")], "subtitle": ""})
+    d = _decide("Mergel", 2019, TITLE, ("crossref", no_year), ("openalex", oa))
+    assert d.status == "verified"
+    assert d.best.sources == ["crossref", "openalex"]
+
+
+def test_same_doi_from_two_sources_is_one_work() -> None:
+    d = _decide("Mergel", 2019, FULL, ("crossref", MERGEL), ("openalex", MERGEL))
+    assert d.status == "verified"
+
+
+def test_two_distinct_compatible_works_are_ambiguous() -> None:
+    other = MERGEL.model_copy(update={"doi": "10.9999/other"})
+    d = _decide("Mergel", 2019, TITLE, ("crossref", MERGEL), ("crossref", other))
+    assert d.status == "ambiguous"
+    assert len(d.verifiable) == 2
+
+
+def test_unrelated_hit_does_not_hide_the_right_one() -> None:
+    unrelated = Paper(title="Something else entirely", year=2019, authors=[_a("X Y", "Y", "X")])
+    d = _decide("Mergel", 2019, FULL, ("crossref", unrelated), ("openalex", MERGEL))
+    assert d.status == "verified"
+
+
+def test_full_mode_near_miss_is_conflict_unrelated_hit_is_not() -> None:
+    typo = "Defining digital transformations: Results from expert interviews"
+    assert _decide("Mergel", 2019, typo, ("crossref", MERGEL), mode="full").status == "conflict"
+    unrelated = Paper(title="Other", year=2010, authors=[_a("X Y", "Y", "X")])
+    assert (
+        _decide("Mergel", 2019, typo, ("crossref", unrelated), mode="full").status == "insufficient"
+    )
+
+
+def test_nothing_found() -> None:
+    d = _decide("Mergel", 2019, FULL)
+    assert d.status == "insufficient"
+    assert "does not by itself prove" in d.next_action
+
+
+# --- tool --------------------------------------------------------------------
+
+CR_ITEM = {
+    "DOI": "10.1016/j.giq.2019.06.002",
+    "title": [TITLE],
+    "subtitle": [SUB],
+    "published": {"date-parts": [[2019]]},
+    "author": [{"given": "Ines", "family": "Mergel"}, {"given": "Noella", "family": "Edelmann"}],
+    "type": "journal-article",
+}
+
+
+def _server(tmp_path, cr_handler, oa_handler):
+    server = FastMCP("t")
+    pool = register_all_tools(
+        server,
+        Settings(polite_email="ci@bxscholar.dev", cache_enabled=False),
+        RankingService(data_dir=tmp_path),
+    )
+    pool.crossref._client = httpx.AsyncClient(transport=httpx.MockTransport(cr_handler))
+    pool.openalex._client = httpx.AsyncClient(transport=httpx.MockTransport(oa_handler))
+    return server, pool
+
+
+async def _call(server, args) -> dict:
+    out = await server.call_tool("verify_citation", args)
+    return json.loads((out[0] if isinstance(out, tuple) else out)[0].text)
+
+
+async def test_tool_verified_and_no_year_filter(tmp_path) -> None:
+    seen: list[httpx.Request] = []
+
+    def cr(req: httpx.Request) -> httpx.Response:
+        seen.append(req)
+        return httpx.Response(200, json={"message": {"items": [CR_ITEM]}})
+
+    server, pool = _server(tmp_path, cr, lambda r: httpx.Response(200, json={"results": []}))
+    r = await _call(server, {"author": "Mergel", "year": 2019, "title_fragment": FULL})
+    assert r["verified"] is True
+    assert r["status"] == "verified"
+    assert r["confidence"] == "high"
+    assert "filter" not in seen[0].url.params  # a ±1 filter would hide year conflicts
+    await pool.aclose()
+
+
+async def test_tool_reports_source_failure_without_calling_it_fabricated(tmp_path) -> None:
+    server, pool = _server(tmp_path, lambda r: httpx.Response(400), lambda r: httpx.Response(400))
+    r = await _call(server, {"author": "Mergel", "year": 2019, "title_fragment": FULL})
+    assert r["verified"] is False
+    assert set(r["source_errors"]) == {"crossref", "openalex"}
+    assert "fabricated" not in json.dumps(r)
+    await pool.aclose()
+
+
+async def test_tool_conflict_shows_closest_match(tmp_path) -> None:
+    server, pool = _server(
+        tmp_path,
+        lambda r: httpx.Response(200, json={"message": {"items": [CR_ITEM]}}),
+        lambda r: httpx.Response(200, json={"results": []}),
+    )
+    r = await _call(server, {"author": "Smith", "year": 2019, "title_fragment": FULL})
+    assert r["status"] == "conflict"
+    assert r["closest_match"]["match"]["doi"] == "10.1016/j.giq.2019.06.002"
+    assert r["next_action"]
+    await pool.aclose()

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from bx_scholar_core.citation_match import CitationMatch, best_match
 from bx_scholar_core.clients.base import AsyncHTTPClient, NonRetryableHTTPError
 from bx_scholar_core.models.paper import MAX_AUTHORS, Author, Paper
 from bx_scholar_core.models.verification import RetractionStatus
@@ -59,6 +58,7 @@ def _parse_item(item: dict[str, Any]) -> Paper:
         source_type = "unknown"
 
     return Paper(
+        subtitle=(item.get("subtitle") or [""])[0],
         title=(item.get("title") or [""])[0],
         doi=item.get("DOI", ""),
         year=year,
@@ -126,37 +126,19 @@ class CrossRefClient(AsyncHTTPClient):
         except NonRetryableHTTPError:
             return None
 
-    async def find_citation(
-        self,
-        author: str,
-        year: int | None,
-        title_fragment: str,
-    ) -> CitationMatch | None:
-        """Best-scoring CrossRef record for a citation, or None if nothing came back."""
-        params: dict[str, Any] = {
-            "query.bibliographic": f"{author} {title_fragment}",
-            "rows": 5,
-        }
-        if year:
-            params["filter"] = f"from-pub-date:{year - 1},until-pub-date:{year + 1}"
-        try:
-            resp = await self.get("/works", params=params, cache_policy=("verification", 86400))
-        except NonRetryableHTTPError:
-            return None
-        items = resp.json().get("message", {}).get("items", [])
-        return best_match([_parse_item(i) for i in items], author, year, title_fragment)
+    async def search_bibliographic(self, text: str, rows: int = 10) -> list[Paper]:
+        """Candidates for a citation string (author + title), ranked by Crossref.
 
-    async def verify_citation(
-        self,
-        author: str,
-        year: int | None,
-        title_fragment: str,
-    ) -> tuple[bool, Paper | None]:
-        """Verify a citation exists. Returns (verified, best_match)."""
-        match = await self.find_citation(author, year, title_fragment)
-        if match is None:
-            return False, None
-        return match.verified, match.paper
+        No year filter: a hard ±1 filter would hide the very record needed to
+        show a year conflict. Deciding which candidate (if any) is the cited
+        work is the verifier's job, not this method's. HTTP errors propagate.
+        """
+        resp = await self.get(
+            "/works",
+            params={"query.bibliographic": text, "rows": min(rows, 20)},
+            cache_policy=("verification", 86400),
+        )
+        return [_parse_item(i) for i in resp.json().get("message", {}).get("items", [])]
 
     async def check_retraction(self, doi: str) -> RetractionStatus:
         """Check if a paper has been retracted."""

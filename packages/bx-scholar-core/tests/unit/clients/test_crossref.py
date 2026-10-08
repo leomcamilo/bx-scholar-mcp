@@ -69,36 +69,48 @@ class TestCrossRefClient:
         assert papers[0].doi == "10.1234/test"
         await client.close()
 
-    async def test_verify_citation_found(self) -> None:
-        transport = httpx.MockTransport(
-            lambda req: httpx.Response(
-                200,
-                json={"message": {"items": [SAMPLE_ITEM]}},
-            )
-        )
-        client = CrossRefClient(polite_email="test@uni.edu")
-        client._client = httpx.AsyncClient(transport=transport)
+    async def test_search_bibliographic_returns_all_candidates(self) -> None:
+        seen: list[httpx.Request] = []
 
-        verified, match = await client.verify_citation("Doe", 2023, "AI Adoption Government")
-        assert verified is True
-        assert match is not None
-        assert match.doi == "10.1234/test"
+        def handler(req: httpx.Request) -> httpx.Response:
+            seen.append(req)
+            return httpx.Response(200, json={"message": {"items": [SAMPLE_ITEM, SAMPLE_ITEM]}})
+
+        client = CrossRefClient(polite_email="test@uni.edu")
+        client._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        papers = await client.search_bibliographic("Doe AI Adoption Government", rows=5)
+        assert len(papers) == 2
+        params = dict(seen[0].url.params)
+        assert params["query.bibliographic"] == "Doe AI Adoption Government"
+        assert "filter" not in params
         await client.close()
 
-    async def test_verify_citation_not_found(self) -> None:
-        transport = httpx.MockTransport(
-            lambda req: httpx.Response(
-                200,
-                json={"message": {"items": []}},
-            )
+    def test_structured_and_organization_authors(self) -> None:
+        p = _parse_item(
+            {
+                "title": ["T"],
+                "subtitle": ["S"],
+                "published": {"date-parts": [[2019]]},
+                "author": [
+                    {
+                        "given": "Ines",
+                        "family": "Mergel",
+                        "ORCID": "http://orcid.org/0000-0003-0285-4758",
+                    },
+                    {"name": "World Health Organization"},
+                ],
+            }
         )
-        client = CrossRefClient(polite_email="test@uni.edu")
-        client._client = httpx.AsyncClient(transport=transport)
+        assert p.year == 2019  # only "published" present
+        assert p.subtitle == "S"
+        ines, who = p.authors
+        assert (ines.family, ines.given, ines.structure_source) == ("Mergel", "Ines", "source")
+        assert ines.orcid == "0000-0003-0285-4758"
+        assert (who.kind, who.literal) == ("organization", "World Health Organization")
 
-        verified, match = await client.verify_citation("Nobody", 2099, "Nonexistent Paper")
-        assert verified is False
-        assert match is None
-        await client.close()
+    def test_authors_not_cut_at_ten(self) -> None:
+        item = {"title": ["T"], "author": [{"given": "A", "family": f"F{i}"} for i in range(25)]}
+        assert len(_parse_item(item).authors) == 25
 
     async def test_check_retraction_not_retracted(self) -> None:
         transport = httpx.MockTransport(

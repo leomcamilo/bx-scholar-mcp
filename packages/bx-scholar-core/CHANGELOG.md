@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **`verify_citation` redesigned** (designed with a Codex review): retrieves candidates from Crossref and OpenAlex together, without a year filter, and decides per candidate. `status` is `verified`, `conflict` (an identified work contradicts the citation), `ambiguous` (several works match) or `insufficient`. A title confirms only as the full title, the main title or a literal contiguous passage of 4+ content words; similarity never confirms; a field missing on the record is not a match; authors use the source's family/given structure and every cited author must match a distinct record author. New `title_mode` (`auto`/`full`/`fragment`) and `next_action`; the "may be fabricated" message is gone. Replaces `citation_match.py`
 - `search_papers` and OpenAlex search sort by relevance by default (was citation count, which returned the most cited work vaguely matching the terms). Pass `sort="cited_by_count:desc"` to rank by impact. Ported from 1a561db (feat/http-service-and-hardening), which never reached main
 
 ### Added
