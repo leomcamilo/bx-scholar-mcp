@@ -117,6 +117,7 @@ version = "0.1.0"
 source = { editable = "packages/bx-scholar-core" }
 dependencies = [
     { name = "aiolimiter" },
+    { name = "defusedxml" },
     { name = "duckdb" },
     { name = "httpx" },
     { name = "mcp", extra = ["cli"] },
@@ -136,6 +137,7 @@ dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
+    { name = "types-defusedxml" },
     { name = "vcrpy" },
 ]
 marker = [
@@ -145,6 +147,7 @@ marker = [
 [package.metadata]
 requires-dist = [
     { name = "aiolimiter", specifier = ">=1.1.0" },
+    { name = "defusedxml", specifier = ">=0.7.1" },
     { name = "duckdb", specifier = ">=1.0.0" },
     { name = "httpx", specifier = ">=0.28.0" },
     { name = "marker-pdf", marker = "extra == 'marker'", specifier = ">=1.0.0" },
@@ -161,6 +164,7 @@ requires-dist = [
     { name = "rapidfuzz", specifier = ">=3.0.0" },
     { name = "structlog", specifier = ">=24.0.0" },
     { name = "tenacity", specifier = ">=8.0.0" },
+    { name = "types-defusedxml", marker = "extra == 'dev'", specifier = ">=0.7.0.20260504" },
     { name = "vcrpy", marker = "extra == 'dev'", specifier = ">=6.0.0" },
 ]
 provides-extras = ["marker", "dev"]
@@ -655,6 +659,15 @@ nvrtc = [
 ]
 nvtx = [
     { name = "nvidia-nvtx", marker = "sys_platform == 'linux'" },
+]
+
+[[package]]
+name = "defusedxml"
+version = "0.7.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/0f/d5/c66da9b79e5bdb124974bfe172b4daf3c984ebd9c2a06e2b8a4dc7331c72/defusedxml-0.7.1.tar.gz", hash = "sha256:1bb3032db185915b62d7c6209c5a8792be6a32ab2fedacc84e01b52c51aa3e69", size = 75520, upload-time = "2021-03-08T10:59:26.269Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/07/6c/aa3f2f849e01cb6a001cd8554a88d4c77c5c1a31c95bdf1cf9301e6d9ef4/defusedxml-0.7.1-py2.py3-none-any.whl", hash = "sha256:a352e7e428770286cc899e2542b6cdaedb2b4953ff269a210103ec58f6198a61", size = 25604, upload-time = "2021-03-08T10:59:24.45Z" },
 ]
 
 [[package]]
@@ -2936,6 +2949,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/83/b8/9ebb531b6c2d377af08ac6746a5df3425b21853a5d2260876919b58a2a4a/typer-0.24.2.tar.gz", hash = "sha256:ec070dcfca1408e85ee203c6365001e818c3b7fffe686fd07ff2d68095ca0480", size = 119849, upload-time = "2026-04-22T17:45:34.413Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/39/d1/9484b497e0a0410b901c12b8251c3e746e1e863f7d28419ffe06f7892fda/typer-0.24.2-py3-none-any.whl", hash = "sha256:b618bc3d721f9a8d30f3e05565be26416d06e9bcc29d49bc491dc26aba674fa8", size = 55977, upload-time = "2026-04-22T17:45:33.055Z" },
+]
+
+[[package]]
+name = "types-defusedxml"
+version = "0.7.0.20260504"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/da/d2/4553c8fa9cdebfe1e84b950cf790a4d2376a97fa016e43f7c65323fa6c7d/types_defusedxml-0.7.0.20260504.tar.gz", hash = "sha256:2ab2828a3f97111ba1c16cee273ad4124a831fc9198c41bf8368ff6ea48ad300", size = 10729, upload-time = "2026-05-04T05:22:50.192Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/bf/2d/8a4b5ba1d732b8bc691f0efbb1c6f77cb5f6f473b2afe181d83d910773c5/types_defusedxml-0.7.0.20260504-py3-none-any.whl", hash = "sha256:a959e3a0a43b93e464bd625d91ec9193a2703ddc10443bdd627792485fae0b10", size = 13467, upload-time = "2026-05-04T05:22:49.319Z" },
 ]
 
 [[package]]

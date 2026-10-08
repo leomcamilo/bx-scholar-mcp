@@ -75,6 +75,10 @@ async def _semantic_scholar(pool: ClientPool, q: SearchQuery) -> tuple[list[Pape
     return await pool.semantic_scholar.search(q.text, year=year, limit=q.limit)
 
 
+async def _europepmc(pool: ClientPool, q: SearchQuery) -> tuple[list[Paper], int]:
+    return await pool.europepmc.search(q.text, q.year_from, q.year_to, limit=q.limit)
+
+
 async def _tavily(pool: ClientPool, q: SearchQuery) -> tuple[list[Paper], int]:
     results = await pool.tavily.search(q.text, max_results=min(q.limit, 10))
     papers = [
@@ -98,6 +102,7 @@ SEARCH_SOURCES: dict[str, SearchSource] = {
         SearchSource("arxiv", _arxiv),
         SearchSource("scielo", _scielo),
         SearchSource("semantic_scholar", _semantic_scholar),
+        SearchSource("europepmc", _europepmc),
         SearchSource("tavily", _tavily, requires="tavily_api_key"),
     )
 }
