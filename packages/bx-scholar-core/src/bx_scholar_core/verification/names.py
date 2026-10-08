@@ -33,7 +33,7 @@ PARTICLES = frozenset(
 )  # fmt: skip
 _NOISE = frozenset({"jr", "sr", "ii", "iii", "iv", "eds", "ed", "org", "orgs", "coord", "et", "al"})
 _ORG_WORDS = re.compile(
-    r"organi[sz]ation|universi|ministr|institut|associa|societ|council|agenc|foundation|"
+    r"organi[sz]ation|universi|ministr|institut|associa|societ|\bcouncils?\b|agenc|foundation|"
     r"department|commission|committee|consortium|\bcent(?:er|re)\b|\bbank\b|\boffice\b|"
     r"network|\bgroup\b|\bboard\b|academ|federation|programme|\bunion\b|administra|"
     r"collaboration|working party|\bteam\b",
@@ -44,11 +44,12 @@ _ORG_WORDS = re.compile(
 # Victoria Team): alone they make a name an organization only when it does not
 # look like a person ("Asian Development Bank", not "Bank, R." or "World Bank").
 _WEAK_ORG = re.compile(r"\b(?:bank|group|team|network|board|union|office|cent(?:er|re))\b", re.I)
-# Family names a source uses when it encodes a collaboration as a person.
+# Family names a source uses when it encodes a collaboration as a person. The
+# first set is never a surname; the second is (David Group, Victoria Team).
 _COLLAB_FAMILY = frozenset(
-    {"consortium", "consortia", "collaboration", "collaborators", "investigators",
-     "committee", "group", "team", "network"}
-)  # fmt: skip
+    {"consortium", "consortia", "collaboration", "collaborators", "investigators", "committee"}
+)
+_COLLAB_FAMILY_WEAK = frozenset({"group", "team", "network"})
 # "WHO", "W.H.O.", "CERN": capitals, optionally dotted.
 _ACRONYM = re.compile(r"[A-Z](?:\.?[A-Z]){1,7}\.?")
 # A sign of an unreadable name: "???", "Smith, J?", a replacement character.
@@ -75,9 +76,8 @@ def _unreadable(name: str) -> bool:
         return True
     if any(unicodedata.category(ch)[0] in "SC" for ch in name if not ch.isspace()):
         return True  # symbols, emoji, control or unassigned characters
-    words = [_NAME_PUNCT.sub("", t) for t in name.split()]
-    if any(w.isdigit() for w in words) and not is_org_name(name):
-        return True
+    if re.search(r"\d", re.sub(r"\([^)]*\)", "", name)) and not is_org_name(name):
+        return True  # "Smith, 12345", "Smith, John2": a person's name has no digits
     return any(not re.search(r"\w", t) and not _NAME_PUNCT.fullmatch(t) for t in name.split())
 
 
@@ -366,7 +366,8 @@ def _org_parts(text: str) -> tuple[str, str]:
     base = " ".join(_surname_key(re.sub(r"\([^)]*\)", " ", text)))
     if not base:  # "(The NANOGrav Collaboration)": the parenthesis is the name
         return " ".join(_surname_key(re.sub(r"[()]", " ", text))), ""
-    return base, " ".join(_surname_key(" ".join(quals)))
+    # a qualifier keeps every word: "(II)" is not "(III)"
+    return base, " ".join(w for w in re.split(r"[\s\-'.()]+", fold(" ".join(quals))) if w)
 
 
 def _org_record(text: str, structured: bool) -> RecordAuthor:
@@ -379,9 +380,12 @@ def _is_collaboration(a: Author, org_names: frozenset[str]) -> bool:
     given "DEEP"). The family word alone is not enough (Victoria Team, David
     Group): the given name must be an acronym ("DEEP", "NOvA") or the record
     must also list the collaboration by name ("ATLAS Collaboration")."""
-    if fold(a.family).strip() not in _COLLAB_FAMILY:
-        return False
+    family = fold(a.family).strip()
     whole = fold(f"{a.given} {a.family}").strip()
+    if family in _COLLAB_FAMILY_WEAK:
+        return whole in org_names  # "DAVID Group" may be a person written in capitals
+    if family not in _COLLAB_FAMILY:
+        return False
     acronym = len(a.given.split()) == 1 and sum(c.isupper() for c in a.given) >= 2
     return acronym or whole in org_names
 
@@ -391,6 +395,8 @@ def record_author(a: Author, org_names: frozenset[str] = frozenset()) -> RecordA
         return _org_record(a.literal or a.name, True)
     if a.family and _is_collaboration(a, org_names):
         return _org_record(f"{a.given} {a.family}".strip(), True)
+    if a.family and (_unreadable(a.family) or _unreadable(a.given)):
+        return RecordAuthor((), "", True)  # "John🤖", "12345": nothing to compare with
     if a.family:
         family, given_text = a.family, a.given
         if "," in family and not given_text:
@@ -398,14 +404,14 @@ def record_author(a: Author, org_names: frozenset[str] = frozenset()) -> RecordA
             family, given_text = (x.strip() for x in family.split(",", 1))
         given = parse_given(given_text, "no_vowel")
         return RecordAuthor((PersonReading(tuple(_surname_key(family)), given),), "", True)
-    if is_org_name(a.name):
+    if _strong_org(a.name):
         return _org_record(a.name, False)
     parsed = parse_cited(a.name)
-    if _WEAK_ORG.search(a.name):
-        base, qualifier = _org_parts(a.name)
-        return RecordAuthor(parsed.readings, base, False, _aliases(a.name), qualifier, True)
     # A display name read as a bare compound surname would hide its given names.
     readings = tuple(r for r in parsed.readings if r.given.parts) or parsed.readings
+    if _WEAK_ORG.search(a.name):
+        base, qualifier = _org_parts(a.name)
+        return RecordAuthor(readings, base, False, _aliases(a.name), qualifier, True)
     return RecordAuthor(readings, parsed.organization, False)
 
 
@@ -470,8 +476,10 @@ def compare_author(cited: CitedAuthor, record: RecordAuthor) -> AuthorState:
         if cited.literal and cited.literal == record.organization:
             return _qualified(cited, record, "exact")
         st = _compare_people(cited, record)
+        if st not in ("exact", "compatible"):
+            return st
         spelled = any(not ini for c in cited.readings for _, ini in c.given.parts)
-        return "unknown" if st in ("exact", "compatible") and not spelled else st
+        return _qualified(cited, record, st) if spelled else "unknown"
     if record.organization:
         if cited.literal and cited.literal == record.organization:
             # "IBGE", "Petrobras": same name

@@ -23,7 +23,9 @@ import argparse
 import asyncio
 import copy
 import gzip
+import html
 import json
+import re
 import sys
 from collections import Counter
 from pathlib import Path
@@ -112,9 +114,39 @@ def _transport(
     return httpx.MockTransport(handler)
 
 
-def _coherent(case: dict, result: dict) -> bool:
-    """A verified answer must carry the evidence for it: confirming checks and
-    a matched record whose year agrees with the citation."""
+def _key(text: str) -> str:
+    """Letters and digits only, for comparing a returned field with the frozen one."""
+    for _ in range(5):
+        text = html.unescape(re.sub(r"<[^>]+>", "", text))
+    return "".join(c for c in text.casefold() if c.isalnum())
+
+
+def _frozen(work: dict) -> tuple[set[str], set[int], set[str]]:
+    """Titles, years and author name words of the work, from its frozen records."""
+    cr, oa = work["crossref"], work["openalex"] or {}
+    titles = {_key(t) for t in cr.get("title") or []} | {_key(oa.get("title") or "")}
+    years = {y for y in (oa.get("publication_year"),) if y}
+    for k in ("published-print", "published-online", "published", "issued"):
+        parts = (cr.get(k) or {}).get("date-parts") or [[None]]
+        if parts and parts[0] and parts[0][0]:
+            years.add(int(parts[0][0]))
+    names = {
+        _key(w)
+        for a in cr.get("author") or []
+        for w in f"{a.get('family', '')} {a.get('name', '')}".split()
+    }
+    names |= {
+        _key(w)
+        for a in oa.get("authorships") or []
+        for w in ((a.get("author") or {}).get("display_name") or "").split()
+    }
+    return titles - {""}, years, names - {""}
+
+
+def _coherent(case: dict, result: dict, work: dict) -> bool:
+    """A verified answer must carry the evidence for it: confirming checks, and
+    a returned record that is the work's own (title, year and an author taken
+    from the frozen records), not just its DOI."""
     checks = result.get("checks") or {}
     match = result.get("match") or {}
     if checks.get("title_match") not in ("full", "main", "fragment"):
@@ -125,18 +157,23 @@ def _coherent(case: dict, result: dict) -> bool:
         return False
     if case["year"] is not None and abs((match.get("year") or -99) - case["year"]) > 1:
         return False
-    return bool(match.get("title"))
+    titles, years, names = _frozen(work)
+    if _key(match.get("title") or "") not in titles or match.get("year") not in years:
+        return False
+    returned = {_key(w) for a in match.get("authors") or [] for w in str(a.get("name", "")).split()}
+    return not names or bool(returned & names)
 
 
-def classify(case: dict, result: dict, work_dois: set[str]) -> str | None:
+def classify(case: dict, result: dict, work: dict) -> str | None:
     exp, got = case["expected_status"], result["status"]
     doi = (result.get("match") or {}).get("doi", "").lower()
+    # a wrong verdict is counted first, so the false-positive count is exact
+    if got == "verified" and (exp != "verified" or doi not in work["dois"]):
+        return "false_positive"
     if result.get("verified") is not (got == "verified"):
         return "inconsistent"  # verified flag and status disagree: always an error
-    if got == "verified" and not _coherent(case, result):
+    if got == "verified" and not _coherent(case, result, work):
         return "inconsistent"  # a verified answer whose own evidence contradicts it
-    if got == "verified" and (exp != "verified" or doi not in work_dois):
-        return "false_positive"
     if exp == "verified" and got != "verified":
         return "false_negative"
     if exp != got:
@@ -176,7 +213,7 @@ async def run(split: str, limit: int | None, verbose: bool) -> dict:
         )  # fmt: skip
         # a wrong verdict is counted as such even when a source failed; a source
         # failure on an otherwise right answer is a harness failure
-        kind = classify(case, result, raw[case["work"]]["dois"])
+        kind = classify(case, result, raw[case["work"]])
         if kind is None and (refusals or result.get("source_errors")):
             kind = "harness"
         t = by_transformation.setdefault(case["transformation"], Counter())

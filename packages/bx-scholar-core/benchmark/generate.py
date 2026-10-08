@@ -131,6 +131,8 @@ _COLLAB = re.compile(
 def _is_collab(a: dict, org_names: set[str]) -> bool:
     if not _COLLAB.match((a.get("family") or "").strip()):
         return False
+    if a["family"].strip().casefold() in ("group", "team", "network"):
+        return _whole(a) in org_names  # surnames too: "DAVID Group" may be a person
     given = a.get("given") or ""
     acronym = len(given.split()) == 1 and sum(c.isupper() for c in given) >= 2  # "DEEP", "NOvA"
     return acronym or _whole(a) in org_names

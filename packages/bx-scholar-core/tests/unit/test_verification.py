@@ -121,8 +121,8 @@ def test_author(cited: str, records: list[Author], expected: str) -> None:
 
 
 def test_author_past_the_tenth_position() -> None:
-    records = [_a(f"Person {i}", f"Family{i}", "Ana") for i in range(15)]
-    assert compare_authors("Family12, A.", records)[0] == "exact"
+    records = [_a(f"Person {i}", f"Family{chr(97 + i)}", "Ana") for i in range(15)]
+    assert compare_authors("Familym, A.", records)[0] == "exact"
 
 
 def test_absent_author_in_truncated_list_is_unknown_not_conflict() -> None:
@@ -348,7 +348,10 @@ def test_crossref_keeps_every_author_so_the_101st_verifies() -> None:
     into "unknown" and a wrong one into "unknown" instead of "conflict"."""
     from bx_scholar_core.clients.crossref import _parse_item
 
-    authors = [{"given": "A", "family": f"F{i}"} for i in range(100)]
+    # surnames without digits: a digit makes a person's name unreadable
+    authors = [
+        {"given": "A", "family": f"F{chr(97 + i // 26)}{chr(97 + i % 26)}"} for i in range(100)
+    ]
     item = {
         "title": ["T"],
         "published": {"date-parts": [[2020]]},
@@ -559,3 +562,49 @@ def test_cycle4_unpadded_doi_needs_the_same_full_title() -> None:
     oa = SMITH.model_copy(update={"doi": "10.5555/series.1"})
     d = _decide("Smith, John", 2020, SMITH.title, ("crossref", sub), ("openalex", oa))
     assert d.status == "ambiguous"
+
+
+# --- fifth Codex test cycle --------------------------------------------------
+
+CYCLE5_AUTHORS = [
+    ("Bank, John", [_a("Randolph Bank")], "conflict"),
+    ("Bank, John", [_a("World Bank")], "conflict"),
+    ("Bank, Randolph (Boston)", [_a("Randolph Bank (London)")], "conflict"),
+    ("Smith, John2", [_a("John Smith", "Smith", "John")], "unknown"),
+    ("Smith, 12345:", [_a("John Smith", "Smith", "John")], "unknown"),
+    ("Smith, John", [_a("x", "Smith", "John\U0001f916")], "unknown"),
+    ("Smith, John", [_a("x", "Smith", "12345")], "unknown"),
+    ("World Health Organization (II)", [_org("World Health Organization (III)")], "conflict"),
+    ("World Bank (II)", [_org("World Bank (III)")], "conflict"),
+    ("Bank, John Paul", [_a("John Paul Bank")], "exact"),
+    ("Councilman, John", [_a("x", "Councilman", "John")], "exact"),
+    ("GROUP, DAVID", [_a("x", "Group", "DAVID")], "exact"),
+]  # fmt: skip
+
+
+@pytest.mark.parametrize(("cited", "records", "expected"), CYCLE5_AUTHORS)
+def test_cycle5_author(cited: str, records: list[Author], expected: str) -> None:
+    state = compare_authors(cited, records)[0]
+    assert state in (("exact", "compatible") if expected == "exact" else (expected,))
+
+
+@pytest.mark.parametrize(
+    ("given", "title", "expected"),
+    [
+        ("Response at 5 mg in healthy adults", "Response at .5 mg in healthy adults", "conflict"),
+        ("Estimating the ratio x y in populations", "Estimating the ratio x/y in populations", "conflict"),
+        ("Counting 10 permutations in finite systems", "Counting 10! permutations in finite systems", "conflict"),
+        ("Counting (n+1) permutations in finite systems", "Counting (n+1)! permutations in finite systems", "conflict"),
+        ("Solutions of y = f(x) in dynamical systems", "Solutions of y′ = f(x) in dynamical systems", "conflict"),  # noqa: RUF001
+        ("Calling exit in software systems", "Calling <code>_exit</code> in software systems", "conflict"),
+        ("Cell viability at -.5 °C", "Cell viability at -5 °C", "conflict"),
+        ("Computing x 2 in finite systems", "Computing x**2 in finite systems", "conflict"),
+        ("Naming <code>_</code> in software systems", "Naming <code></code> in software systems", "conflict"),
+        ("Accessing a.b in software systems", "Accessing <code>a.b</code> in software systems", "full"),
+        ("Calling <code>foo</code> in software systems", "Calling <i><code>foo</code></i> in software systems", "full"),
+        ("- 10 °C storage of cell cultures", "− 10 °C storage of cell cultures", "full"),  # noqa: RUF001
+        ("U.S. policy on urban mobility", "US policy on urban mobility", "full"),
+    ],
+)  # fmt: skip
+def test_cycle5_title(given: str, title: str, expected: str) -> None:
+    assert compare_title(given, title, mode="full").state == expected

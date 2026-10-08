@@ -57,46 +57,55 @@ _MAX_UNESCAPE = 10
 # Code spans travel through fold() between these private-use marks, so that
 # tokens() keeps their punctuation ("a.b", "</b>").
 CODE_OPEN, CODE_CLOSE = "\ue000", "\ue001"
+# Code content is shielded from markup removal and entity decoding while the
+# rest of the title is cleaned: "&", "<", ">" inside it travel as these marks.
+_SHIELD = {"&": "\ue002", "<": "\ue003", ">": "\ue004"}
+_UNSHIELD = {v: k for k, v in _SHIELD.items()}
 # Symbols that change meaning stay as tokens: every Unicode math symbol
-# (x > 0 vs x < 0, x \u2208 A vs x \u2209 A, A \u2288 B), plus %, \u00b0 and ^.
+# (x > 0 vs x < 0, x \u2208 A vs x \u2209 A, A \u2288 B), plus %, \u00b0, ^ and primes (y').
 _MATH = (
-    "".join(ch for ch in map(chr, range(0x110000)) if unicodedata.category(ch) == "Sm") + "%\u00b0^"
+    "".join(ch for ch in map(chr, range(0x110000)) if unicodedata.category(ch) == "Sm")
+    + "%\u00b0^\u2032\u2033\u2034"
 )
 _TERM = (
     r"[^\W_]+"
     rf"|[{re.escape(_MATH)}]"
-    r"|(?<=\d)[.,](?=\d)"  # decimal separator: 0.5 is not 0 5
-    r"|(?<=\b\w)!"  # factorial after a single letter or digit: n!
+    r"|(?<=\d)[.,](?=\d)|(?<![\w.])\.(?=\d)"  # decimals: 0.5 is not 0 5, .5 is not 5
+    r"|(?<=[^\W_])\.(?=[^\W_])"  # inside a term: Node.js, a.b (initialisms set aside)
+    r"|(?<=[^\W_])/(?=[^\W_])"  # x/y
+    r"|(?<=[^\W_])\*+(?=[^\W_])"  # x**2
+    r"|(?:(?<=\d)|(?<=\))|(?<=\b\w))!"  # factorial: n!, 10!, (n+1)! but not "Help!"
     # A minus is kept: U+2212 always ("x\u22121", "\u2212 10"); an ASCII hyphen as
     # the sign of a number ("-10", "-.5", "at - 10", but not the range "2010 -
     # 2020"). A hyphen inside a term ("COVID-19", "3-D") is not a sign.
-    r"|\u2212|(?<![\w\s])-(?=\.?\d)|(?<=^)-(?=\.?\d)|(?<=[^\d\s] )-(?= ?\.?\d)"
+    r"|\u2212|(?<![\w\s])-(?=\.?\d)|(?<=^)-(?= ?\.?\d)|(?<=[^\d\s] )-(?= ?\.?\d)"
 )
-_CODE_TERM = r"[^\W_]+|[^\w\s]"
+_CODE_TERM = r"[^\W_]+|[^\w\s]|_"
+# "U.S." is "US": the dots of an initialism are not part of the terms
+_INITIALISM = re.compile(r"\b(?:[^\W\d_]\.){2,}")
 
 
-def _plain_part(text: str, depth: int = 0) -> str:
-    parts = _CODE.split(text)
-    if len(parts) > 1:
-        # code is literal: decoded once, kept between marks
-        return "".join(
-            f"{CODE_OPEN}{html.unescape(p)}{CODE_CLOSE}" if i % 2 else _plain_part(p, depth)
-            for i, p in enumerate(parts)
-        )
-    stripped = _SELF_CLOSING.sub("", text)
-    while (nxt := _PAIRED.sub(r"\2", stripped)) != stripped:
-        stripped = nxt
-    nxt = html.unescape(stripped)
-    if nxt == text or depth >= _MAX_UNESCAPE:
-        return nxt
-    return _plain_part(nxt, depth + 1)
+def _shield(text: str) -> str:
+    return "".join(_SHIELD.get(c, c) for c in text)
 
 
 def _plain(text: str) -> str:
     """Markup removed and entities decoded until nothing changes: sources
     escape entities several times ("&amp;amp;eacute;") and escape tags
-    ("&lt;b&gt;", even a whole "&lt;code&gt;" element)."""
-    return _plain_part(text)
+    ("&lt;b&gt;", even a whole "&lt;code&gt;" element). A <code> element is
+    literal: decoded once and kept between marks, even inside <i>...</i>."""
+    for _ in range(_MAX_UNESCAPE):
+        cur = _CODE.sub(
+            lambda m: f"{CODE_OPEN}{_shield(html.unescape(m.group(1)))}{CODE_CLOSE}", text
+        )
+        cur = _SELF_CLOSING.sub("", cur)
+        while (nxt := _PAIRED.sub(r"\2", cur)) != cur:
+            cur = nxt
+        cur = html.unescape(cur)
+        if cur == text:
+            break
+        text = cur
+    return "".join(_UNSHIELD.get(c, c) for c in text)
 
 
 def _is_latin_base(ch: str) -> bool:
@@ -129,6 +138,7 @@ def tokens(text: str) -> list[str]:
             out.extend(re.findall(_CODE_TERM, chunk))
             continue
         # one space, as displayed: the sign rule looks at the character before
+        chunk = _INITIALISM.sub(lambda m: m.group().replace(".", "") + " ", chunk)
         for run in re.findall(_TERM, re.sub(r"\s+", " ", chunk)):
             if run in ("\u2212", "-"):
                 run = "-"
