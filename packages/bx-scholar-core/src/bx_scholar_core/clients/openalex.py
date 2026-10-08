@@ -113,8 +113,12 @@ class OpenAlexClient(AsyncHTTPClient):
         year_to: int | None = None,
         journal_issn: str | None = None,
         type_filter: str | None = None,
-        sort: str = "cited_by_count:desc",
+        # Relevance, not citation count: sorting by citations returned the most
+        # cited work that vaguely matched the terms ("mobilidade urbana preditiva"
+        # brought an Industry 4.0 paper). Pass sort= to rank by impact.
+        sort: str = "relevance_score:desc",
         per_page: int = 25,
+        language: str | None = None,
     ) -> tuple[list[Paper], int]:
         """Search for papers. Returns (papers, total_count)."""
         params: dict[str, Any] = {
@@ -132,6 +136,8 @@ class OpenAlexClient(AsyncHTTPClient):
             filters.append(f"primary_location.source.issn:{journal_issn}")
         if type_filter:
             filters.append(f"type:{type_filter}")
+        if language:
+            filters.append(f"language:{language}")
         if filters:
             params["filter"] = ",".join(filters)
 

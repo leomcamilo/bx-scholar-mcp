@@ -26,7 +26,7 @@ class SearchQuery:
     year_to: int | None = None
     limit: int = 25
     journal_issn: str | None = None
-    sort: str = "cited_by_count:desc"
+    sort: str = "relevance_score:desc"
     # Document formats (VuFind values, e.g. "doctoralThesis"); honored by the
     # repository sources, ignored by the others.
     formats: tuple[str, ...] = ()
@@ -55,6 +55,27 @@ async def _openalex(pool: ClientPool, q: SearchQuery) -> tuple[list[Paper], int]
 
 async def _crossref(pool: ClientPool, q: SearchQuery) -> tuple[list[Paper], int]:
     return await pool.crossref.search(q.text, q.year_from, q.year_to, rows=q.limit)
+
+
+async def _portuguese(pool: ClientPool, q: SearchQuery) -> tuple[list[Paper], int]:
+    """Works written in Portuguese, from any venue (OpenAlex language filter).
+
+    Complements "scielo" (SciELO Brasil only, by DOI prefix): for "mobilidade
+    urbana", SciELO Brasil has a few thousand hits, Portuguese-language works
+    about sixty thousand.
+    """
+    papers, total = await pool.openalex.search(
+        q.text,
+        q.year_from,
+        q.year_to,
+        q.journal_issn,
+        sort=q.sort,
+        per_page=q.limit,
+        language="pt",
+    )
+    for p in papers:
+        p.source_api = "openalex_pt"
+    return papers, total
 
 
 async def _arxiv(pool: ClientPool, q: SearchQuery) -> tuple[list[Paper], int]:
@@ -116,6 +137,7 @@ SEARCH_SOURCES: dict[str, SearchSource] = {
         SearchSource("crossref", _crossref),
         SearchSource("arxiv", _arxiv),
         SearchSource("scielo", _scielo),
+        SearchSource("pt", _portuguese),
         SearchSource("semantic_scholar", _semantic_scholar),
         SearchSource("europepmc", _europepmc),
         SearchSource("bdtd", _bdtd),
@@ -128,7 +150,7 @@ SEARCH_SOURCES: dict[str, SearchSource] = {
 # Presets name a set of sources; only entries present in SEARCH_SOURCES are
 # used, so a preset can list a source before its client lands.
 PRESETS: dict[str, tuple[str, ...]] = {
-    "br": ("scielo", "bdtd", "oasisbr"),
+    "br": ("scielo", "pt", "bdtd", "oasisbr"),
     "latam": ("scielo", "lareferencia", "oasisbr"),
     "asia": ("cinii", "jstage"),
     "bio": ("europepmc", "openalex"),

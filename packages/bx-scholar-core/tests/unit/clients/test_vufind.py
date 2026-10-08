@@ -205,10 +205,11 @@ class TestSearchThesesTool:
         _mock(pool.bdtd, lambda r: httpx.Response(200, json=_json("bdtd")))
         _mock(pool.oasisbr, lambda r: httpx.Response(200, json=_json("oasisbr")))
         _mock(pool.scielo, lambda r: httpx.Response(200, json={"results": [], "meta": {}}))
+        _mock(pool.openalex, lambda r: httpx.Response(200, json={"results": [], "meta": {}}))
 
         out = await server.call_tool("search_papers", {"query": "x", "sources": "br"})
         r = json.loads((out[0] if isinstance(out, tuple) else out)[0].text)
 
-        assert r["sources_queried"] == ["scielo", "bdtd", "oasisbr"]
+        assert r["sources_queried"] == ["scielo", "pt", "bdtd", "oasisbr"]
         assert r["per_source"]["bdtd"] == 3
         await pool.aclose()
