@@ -16,6 +16,7 @@ from functools import cached_property
 from typing import TYPE_CHECKING, TypeVar
 
 from bx_scholar_core.clients.arxiv import ArXivClient
+from bx_scholar_core.clients.core import CoreClient
 from bx_scholar_core.clients.crossref import CrossRefClient
 from bx_scholar_core.clients.europepmc import EuropePMCClient
 from bx_scholar_core.clients.openalex import OpenAlexClient
@@ -105,6 +106,11 @@ class ClientPool:
         return self._track(
             OpenCitationsClient(s.opencitations_token, s.user_agent, cache=self.cache)
         )
+
+    @cached_property
+    def core(self) -> CoreClient:
+        s = self.settings
+        return self._track(CoreClient(s.core_api_key, s.user_agent, cache=self.cache))
 
     async def aclose(self) -> None:
         for client in self._created:

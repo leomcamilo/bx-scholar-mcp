@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- CORE source (`sources="core"`, also in the `oa` preset): open-access outputs aggregated from repositories of every field
+- `get_fulltext` falls back to CORE when Europe PMC has no full text: CORE's extracted text with `CORE_API_KEY` (free), otherwise the PDF URL CORE hosts, ready for `download_pdf`
+- `check_open_access` tries CORE when Unpaywall has no PDF; the answer says where the PDF came from (`pdf_source`)
+- Optional `CORE_API_KEY` (free). Search works without it; CORE hides `fullText` from requests without a key
 - OpenCitations (Index v2 + Meta v1): `get_citations(sources="openalex,opencitations")` (new default) merges both, reporting `total_links` per source and flagging author self-citations; `snowball` and `build_citation_network` accept `citation_sources`
 - Optional `OPENCITATIONS_TOKEN` (free)
 - Optional `OPENALEX_API_KEY` (free). Without a key, OpenAlex now enforces a daily budget shared by everyone on the same IP
