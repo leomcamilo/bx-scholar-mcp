@@ -26,6 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - SciELO results no longer claim open access for every record; the status comes from the record
+- `verify_citation` (found in a Codex review): a shared given name counted as an author match ("John Jones" verified "John Smith"); short surnames like "Li" were skipped; different CJK titles normalized to empty strings and matched perfectly; short and numbered terms were dropped, so "IL-6" verified "IL-8" and "AI" verified "AR". The cited surname is now matched within one record author, letters of any script are kept, and short or numbered tokens must match exactly
+- Europe PMC `lookup` validates the DOI before quoting it (a crafted DOI could add OR clauses and return another paper) and only returns a hit carrying the requested identifier
+- `get_fulltext`: `max_chars` also caps the first section (`truncated_section`), and HTTP errors other than 404 are reported as errors instead of "no full text"
+- Deduplication merges records sharing any identifier, including a copy with DOI+PMID and one with PMID only
+- `load_settings(project_root=...)` reads the `.env` of that root
 - SciELO search returned nothing: OpenAlex rejects the removed `host_venue` filter (400) and the direct fallback is blocked (403). Now filters SciELO Brasil by DOI prefix 10.1590
 - Semantic Scholar search turned errors (including 429) into an empty result
 - Tavily results were counted and then dropped; they now come back as `source_type: web`

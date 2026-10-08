@@ -145,3 +145,18 @@ class TestPathResolution:
         s = Settings(polite_email="leo@baxijen.ai")
         assert s.cache_dir == tmp_path
         assert s.cache_enabled is False
+
+
+class TestLoadSettingsOverrideCodexRegression:
+    def test_project_root_override_also_picks_its_env(self, tmp_path, monkeypatch) -> None:
+        for var in ("BX_SCHOLAR_HOME", "POLITE_EMAIL"):
+            monkeypatch.delenv(var, raising=False)
+        other = tmp_path / "other-home"
+        other.mkdir()
+        (other / ".env").write_text("POLITE_EMAIL=jane.doe@mit.edu\n")
+        monkeypatch.chdir(tmp_path)  # cwd has no .env
+
+        s = load_settings(project_root=other)
+
+        assert s.polite_email == "jane.doe@mit.edu"
+        assert s.data_dir == (other / "data").resolve()

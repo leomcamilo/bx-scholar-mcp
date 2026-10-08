@@ -19,6 +19,10 @@ from bx_scholar_core.models.paper import Author, Paper, SourceType
 EUROPEPMC_BASE = "https://www.ebi.ac.uk/europepmc/webservices/rest"
 
 _TAG = re.compile(r"<[^>]+>")
+# Inside a quoted phrase the only characters that can break out are the quote and
+# the backslash; whitespace is never part of a DOI. Parentheses stay allowed
+# (10.1016/S0140-6736(20)30183-5 is a real Lancet DOI).
+_DOI = re.compile(r'10\.\d{4,9}/[^\s"\\]+')
 
 
 def _yes(value: Any) -> bool:
@@ -139,18 +143,25 @@ class EuropePMCClient(AsyncHTTPClient):
         )
 
     async def lookup(self, id_type: str, value: str) -> Paper | None:
-        """Fetch one record by "doi", "pmid" or "pmcid"."""
+        """Fetch one record by "doi", "pmid" or "pmcid".
+
+        The value is validated before it goes into the query (quotes, spaces or
+        OR/AND would otherwise rewrite it) and the hit must carry the same
+        identifier, so a lookup never returns a different paper.
+        """
         # Only DOI may be quoted: EXT_ID:"123" and PMCID:"PMC1" match nothing.
-        if id_type == "doi":
+        if id_type == "doi" and _DOI.fullmatch(value):
             query = f'DOI:"{value}"'
         elif id_type == "pmid" and value.isdigit():
             query = f"EXT_ID:{value} AND SRC:MED"
         elif id_type == "pmcid" and re.fullmatch(r"PMC\d+", value, re.I):
-            query = f"PMCID:{value.upper()}"
+            value = value.upper()
+            query = f"PMCID:{value}"
         else:
-            raise ValueError(f"Unsupported {id_type} for Europe PMC lookup: {value!r}")
-        papers, _ = await self._search(query, 1, ("paper_metadata", 7 * 86400))
-        return papers[0] if papers else None
+            raise ValueError(f"Invalid {id_type} for Europe PMC lookup: {value!r}")
+        papers, _ = await self._search(query, 3, ("paper_metadata", 7 * 86400))
+        field = {"doi": "doi", "pmid": "pmid", "pmcid": "pmcid"}[id_type]
+        return next((p for p in papers if getattr(p, field).lower() == value.lower()), None)
 
     async def _search(
         self, query: str, limit: int, cache_policy: tuple[str, int]
@@ -186,11 +197,17 @@ class EuropePMCClient(AsyncHTTPClient):
         return [_parse_link(i) for i in items]
 
     async def fulltext_xml(self, pmcid: str) -> str | None:
-        """JATS XML of an open-access PMC article, or None if Europe PMC has no full text."""
+        """JATS XML of an open-access PMC article, or None if Europe PMC has no full text.
+
+        Only 404 means "no full text"; any other HTTP error (403, 400...) is raised so
+        a blocked or broken source is not reported as a missing article.
+        """
         try:
             resp = await self.get(f"/{pmcid}/fullTextXML", cache_policy=("fulltext", 30 * 86400))
-        except NonRetryableHTTPError:
-            return None
+        except NonRetryableHTTPError as exc:
+            if exc.status_code == 404:
+                return None
+            raise
         return resp.text
 
 

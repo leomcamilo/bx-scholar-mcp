@@ -145,3 +145,46 @@ class TestVerifyOne:
         assert r["source"] == "crossref"
         assert r["confidence"] == "high"
         assert r["match"]["doi"] == "10.1/dg"
+
+
+class TestCodexReviewRegressions:
+    """Findings from the Codex (gpt-6-astra) review of 2026-10-08."""
+
+    T = "Urban mobility prediction with graph networks"
+    F = "urban mobility prediction graph networks"
+
+    def test_shared_given_name_is_not_an_author_match(self) -> None:
+        m = score_candidate(_paper(self.T, ["John Smith"]), "John Jones", 2020, self.F)
+        assert m.author_ok is False
+        assert not m.verified
+
+    def test_short_surname_is_checked_not_skipped(self) -> None:
+        assert score_candidate(_paper(self.T, ["Wei Zhang"]), "Li", 2020, self.F).author_ok is False
+        assert score_candidate(_paper(self.T, ["Wei Li"]), "Li", 2020, self.F).author_ok is True
+
+    def test_surname_forms(self) -> None:
+        paper = _paper(self.T, ["Leonardo Camilo da Silva", "John Smith"])
+        for cited in ("Smith J", "J. Smith", "Smith, J.", "da Silva, L.", "Silva; Souza"):
+            assert score_candidate(paper, cited, 2020, self.F).author_ok is True, cited
+
+    def test_different_cjk_titles_rejected(self) -> None:
+        m = score_candidate(_paper("蛋白质结构", ["王伟"]), "王伟", 2020, "城市交通")
+        assert not m.verified
+        assert m.title_coverage == 0.0
+
+    def test_cjk_fragment_of_title_accepted(self) -> None:
+        m = score_candidate(_paper("城市交通预测研究", ["王伟"]), "王伟", 2020, "城市交通")
+        assert m.verified
+
+    def test_numbered_terms_must_match_exactly(self) -> None:
+        il8 = _paper("Effects of IL-8 on cell growth", ["Ana Souza"])
+        assert not score_candidate(il8, "Souza", 2020, "Effects of IL-6 on cell growth").verified
+        il6 = _paper("Effects of IL6 on cell growth", ["Ana Souza"])
+        assert score_candidate(il6, "Souza", 2020, "Effects of IL-6 on cell growth").verified
+
+    def test_short_acronyms_must_match_exactly(self) -> None:
+        ar = _paper("AR in urban planning education", ["Ana Souza"])
+        assert not score_candidate(ar, "Souza", 2020, "AI in urban planning education").verified
+
+    def test_fragment_of_only_stopwords_never_matches(self) -> None:
+        assert not score_candidate(_paper("The", ["Ana Souza"]), "Souza", 2020, "the of").verified

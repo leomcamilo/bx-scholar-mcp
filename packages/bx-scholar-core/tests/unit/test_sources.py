@@ -241,3 +241,17 @@ class TestRelevanceAndPortuguese:
         with pytest.raises(NonRetryableHTTPError):
             await pool.scielo.search("x")
         await pool.aclose()
+
+
+class TestDedupCodexRegression:
+    def test_copy_without_doi_merges_through_pmid(self) -> None:
+        with_doi = Paper(title="Same", year=2020, doi="10.1234/x", pmid="123")
+        pmid_only = Paper(title="Same", year=2020, pmid="123")
+        assert len(deduplicate([with_doi, pmid_only])) == 1
+        assert len(deduplicate([pmid_only, with_doi])) == 1
+
+    def test_record_bridging_two_groups_merges_them(self) -> None:
+        a = Paper(title="A", doi="10.1234/a")
+        b = Paper(title="B", pmid="9")
+        bridge = Paper(title="C", doi="10.1234/a", pmid="9")
+        assert len(deduplicate([a, b, bridge])) == 1

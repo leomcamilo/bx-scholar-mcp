@@ -145,8 +145,9 @@ def load_settings(**overrides: object) -> Settings:
     The ``.env`` is read from the project root (see ``find_project_root``), not
     from cwd. Exits with code 1 and a clear message on validation failure.
     """
-    root = find_project_root()
-    overrides.setdefault("project_root", root)
+    override = overrides.get("project_root")
+    root = Path(str(override)).expanduser().resolve() if override else find_project_root()
+    overrides["project_root"] = root
     try:
         return Settings(_env_file=root / ".env", **overrides)  # type: ignore[arg-type,call-arg]
     except Exception as exc:

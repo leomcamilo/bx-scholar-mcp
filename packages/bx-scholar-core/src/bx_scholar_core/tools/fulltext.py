@@ -115,23 +115,30 @@ def register_fulltext_tools(mcp: object, pool: ClientPool) -> None:
         identifier: DOI, PMCID ('PMC1234567') or PMID ('pmid:31398324').
         sections: optional comma-separated words; keeps only sections whose heading
         contains one of them (e.g. 'method,result,discussion').
-        max_chars: cap on the returned section text (default 40000); the full list of
-        headings is always returned so you can ask for the rest.
+        max_chars: cap on the returned section text (default 40000). A section that
+        does not fit is listed in omitted_sections (or cut and named in
+        truncated_section when it is the first one); the full list of headings is
+        always returned so you can ask for the rest.
         Source: Europe PMC open-access subset (mostly life and health sciences). When a
         paper has no full text there, says so: use check_open_access + download_pdf +
         extract_pdf_text instead."""
         resolved = resolve_id(identifier)
-        pmcid, doi = "", ""
-        if resolved.id_type == "pmcid":
-            pmcid = resolved.value
-        elif resolved.id_type in ("doi", "pmid"):
-            record = await pool.europepmc.lookup(resolved.id_type, resolved.value)
-            if record:
-                pmcid, doi = record.pmcid, record.doi
-        else:
+        if resolved.id_type not in ("pmcid", "doi", "pmid"):
             return json.dumps({"error": f"Use a DOI, PMCID or pmid:<n>, got: {identifier}"})
-
-        xml = await pool.europepmc.fulltext_xml(pmcid) if pmcid else None
+        pmcid, doi = "", ""
+        try:
+            if resolved.id_type == "pmcid":
+                pmcid = resolved.value
+            else:
+                record = await pool.europepmc.lookup(resolved.id_type, resolved.value)
+                if record:
+                    pmcid, doi = record.pmcid, record.doi
+            xml = await pool.europepmc.fulltext_xml(pmcid) if pmcid else None
+        except ValueError as exc:
+            return json.dumps({"error": str(exc)})
+        except Exception as exc:
+            # A blocked or failing source is an error, not "no full text"
+            return json.dumps({"error": f"Europe PMC request failed: {type(exc).__name__}: {exc}"})
         if not xml:
             return json.dumps(
                 {
@@ -152,13 +159,20 @@ def register_fulltext_tools(mcp: object, pool: ClientPool) -> None:
         ]
         kept: list[dict[str, str]] = []
         omitted: list[str] = []
+        truncated = ""
         used = 0
         for sec in chosen:
-            if used + len(sec["text"]) > max_chars and kept:
+            remaining = max_chars - used
+            if len(sec["text"]) <= remaining:
+                kept.append(sec)
+                used += len(sec["text"])
+            elif not kept and remaining > 0:
+                # Even the first section obeys the budget: cut it and say so
+                kept.append({**sec, "text": sec["text"][:remaining]})
+                truncated = sec["heading"]
+                used = max_chars
+            else:
                 omitted.append(sec["heading"])
-                continue
-            kept.append(sec)
-            used += len(sec["text"])
         return json.dumps(
             {
                 "available": True,
@@ -169,6 +183,7 @@ def register_fulltext_tools(mcp: object, pool: ClientPool) -> None:
                 "abstract": doc["abstract"],
                 "headings": [sec["heading"] for sec in doc["sections"]],
                 "sections": kept,
+                "truncated_section": truncated,
                 "omitted_sections": omitted,
             },
             ensure_ascii=False,
