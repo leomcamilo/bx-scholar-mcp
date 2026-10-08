@@ -13,16 +13,13 @@ from typing import Any
 from defusedxml import ElementTree as ET
 
 from bx_scholar_core.clients.base import AsyncHTTPClient, NonRetryableHTTPError
+from bx_scholar_core.id_resolver import is_valid_doi
 from bx_scholar_core.languages import to_iso639_1
 from bx_scholar_core.models.paper import Author, Paper, SourceType
 
 EUROPEPMC_BASE = "https://www.ebi.ac.uk/europepmc/webservices/rest"
 
 _TAG = re.compile(r"<[^>]+>")
-# Inside a quoted phrase the only characters that can break out are the quote and
-# the backslash; whitespace is never part of a DOI. Parentheses stay allowed
-# (10.1016/S0140-6736(20)30183-5 is a real Lancet DOI).
-_DOI = re.compile(r'10\.\d{4,9}/[^\s"\\]+')
 
 
 def _yes(value: Any) -> bool:
@@ -150,7 +147,7 @@ class EuropePMCClient(AsyncHTTPClient):
         identifier, so a lookup never returns a different paper.
         """
         # Only DOI may be quoted: EXT_ID:"123" and PMCID:"PMC1" match nothing.
-        if id_type == "doi" and _DOI.fullmatch(value):
+        if id_type == "doi" and is_valid_doi(value):
             query = f'DOI:"{value}"'
         elif id_type == "pmid" and value.isdigit():
             query = f"EXT_ID:{value} AND SRC:MED"

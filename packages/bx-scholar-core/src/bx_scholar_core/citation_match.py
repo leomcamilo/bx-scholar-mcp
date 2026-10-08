@@ -19,13 +19,17 @@ from rapidfuzz import fuzz
 from bx_scholar_core.models.paper import Paper
 
 # Per-token fuzzy threshold: absorbs plurals and OCR typos ("organisation" /
-# "organization") on long words. Short tokens and tokens with digits must match
-# exactly: AI/AR, IL-6/IL-8 or COVID-19/COVID-20 are different things.
+# "organization") on long words.
 TOKEN_SIMILARITY = 85
-EXACT_MAX_LEN = 3
+# Numbers and short terms (IL-6, AI, COVID-19, BRCA1) carry the identity of a
+# title: every one in the fragment must appear, exactly, in the record title,
+# whatever the coverage of the other words. Coverage alone let "IL-6" pass for
+# "IL-8" once the rest of a long title matched.
+DISCRIMINANT_MAX_LEN = 3
 # Share of the fragment's content words that must appear in the record title.
 MIN_TITLE_COVERAGE = 0.8
-# A one-word fragment can't be checked by coverage; it must match the whole title.
+# A one-word fragment can't be checked by coverage; it must match the whole title
+# (or the main title before a subtitle).
 SINGLE_WORD_TITLE_RATIO = 90
 # Scripts written without spaces (CJK) are compared as character strings.
 UNSPACED_MIN_CHARS = 3
@@ -38,18 +42,20 @@ _AUTHOR_NOISE = frozenset({"et", "al", "jr", "sr", "eds", "ed", "org", "orgs"})
 _SURNAME_PARTICLES = frozenset(
     {"da", "de", "do", "das", "dos", "di", "du", "del", "der", "van", "von", "la", "le"}
 )
-_UNSPACED = re.compile(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]")
+_UNSPACED = re.compile("[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]")
+_SUBTITLE = re.compile("\\s*[:?!]\\s+|\\s+[-\u2013\u2014]\\s+")  # colon, or a dash between spaces
 
 
 def _normalize(text: str) -> str:
     """Lowercase, strip accents, keep letters of any script and digits.
 
-    A hyphen between a letter and a digit is dropped so "IL-6" and "IL6" agree;
-    other hyphens split words ("self-driving" -> "self driving").
+    Letters and digits are split apart and every other character is a separator,
+    so "COVID-19", "COVID\u201319 (en dash)", "COVID 19" and "COVID19" all become "covid 19",
+    and "IL-6" / "IL6" become "il 6". The number then stands as its own token.
     """
     text = unicodedata.normalize("NFKD", text.lower())
     text = unicodedata.normalize("NFC", "".join(c for c in text if not unicodedata.combining(c)))
-    text = re.sub(r"(?<=[^\W\d_])-(?=\d)|(?<=\d)-(?=[^\W\d_])", "", text)
+    text = re.sub(r"(?<=[^\W\d_])(?=\d)|(?<=\d)(?=[^\W\d_])", " ", text)
     return re.sub(r"[\W_]+", " ", text).strip()
 
 
@@ -59,42 +65,40 @@ def _content_tokens(text: str) -> list[str]:
     ]
 
 
+def _discriminants(normalized: str) -> list[str]:
+    """Numbers and short Latin terms that must match exactly ("il", "6", "ai")."""
+    return [
+        t
+        for t in re.findall(r"[a-z]+|\d+", normalized)
+        if t.isdigit() or (len(t) <= DISCRIMINANT_MAX_LEN and len(t) > 1 and t not in _STOPWORDS)
+    ]
+
+
+def _has_term(term: str, normalized: str) -> bool:
+    return re.search(rf"(?<![a-z0-9]){re.escape(term)}(?![a-z0-9])", normalized) is not None
+
+
 def _token_in(token: str, pool: list[str]) -> bool:
-    if len(token) <= EXACT_MAX_LEN or any(c.isdigit() for c in token):
+    if len(token) <= DISCRIMINANT_MAX_LEN or token.isdigit():
         return token in pool
     return any(fuzz.ratio(token, p) >= TOKEN_SIMILARITY for p in pool)
 
 
-def _cited_surname(author: str) -> list[str]:
-    """Surname tokens of the first cited author.
-
-    "Silva, L. C.; Souza" -> ["silva"]; "John Smith" -> ["smith"];
-    "Smith J" -> ["smith"]; "da Silva, L." -> ["silva"]; "Li" -> ["li"].
-    """
-    first = re.split(r";|&|\bet al\b|\band\b|\s+e\s+|\s+y\s+", author, maxsplit=1, flags=re.I)[0]
-    if "," in first:
-        part = first.split(",")[0]
-    else:
-        words = [w for w in _normalize(first).split() if len(w) > 1 and w not in _AUTHOR_NOISE]
-        part = words[-1] if words else ""
-    return [w for w in _normalize(part).split() if w not in _SURNAME_PARTICLES and len(w) > 1]
-
-
-def _author_matches(surname: list[str], paper: Paper) -> bool | None:
-    """True if one record author carries every surname token; None if not checkable."""
-    authors = [_normalize(a.name).split() for a in paper.authors if a.name.strip()]
-    if not surname or not authors:
-        return None
-    return any(all(_token_in(s, names) for s in surname) for names in authors)
-
-
 def _title_match(fragment: str, title: str) -> tuple[float, bool]:
     """(coverage, ok) of a title fragment against a record title."""
+    frag, full = _normalize(fragment), _normalize(title)
+    if not frag or not full:  # e.g. only punctuation, or nothing left
+        return 0.0, False
+    if not all(_has_term(t, full) for t in _discriminants(frag)):
+        return 0.0, False
+
     if _UNSPACED.search(fragment):
-        frag, full = _normalize(fragment).replace(" ", ""), _normalize(title).replace(" ", "")
-        if len(frag) < UNSPACED_MIN_CHARS or not full:
+        f, t = frag.replace(" ", ""), full.replace(" ", "")
+        if f == t:
+            return 1.0, True
+        if len(f) < UNSPACED_MIN_CHARS:
             return 0.0, False
-        coverage = fuzz.partial_ratio(frag, full) / 100
+        coverage = fuzz.partial_ratio(f, t) / 100
         return coverage, coverage * 100 >= SINGLE_WORD_TITLE_RATIO
 
     frag_tokens = _content_tokens(fragment)
@@ -103,11 +107,87 @@ def _title_match(fragment: str, title: str) -> tuple[float, bool]:
         coverage = sum(_token_in(t, title_tokens) for t in frag_tokens) / len(frag_tokens)
         return coverage, coverage >= MIN_TITLE_COVERAGE
 
-    frag, full = _normalize(fragment), _normalize(title)
-    if not frag or not full:  # e.g. only stopwords or punctuation left
-        return 0.0, False
-    coverage = fuzz.ratio(frag, full) / 100
+    # One content word (or none, e.g. "What are the limits"): compare the whole
+    # fragment, stopwords included, with the title or its main part.
+    main = _normalize(_SUBTITLE.split(title, maxsplit=1)[0])
+    coverage = max(fuzz.ratio(frag, full), fuzz.ratio(frag, main)) / 100
     return coverage, coverage * 100 >= SINGLE_WORD_TITLE_RATIO
+
+
+@dataclass(frozen=True)
+class _CitedName:
+    words: list[str]  # full name parts, surname particles dropped
+    initials: list[str]  # single letters ("J. D." or "JD" in "Smith JD")
+
+
+def _cited_name(author: str) -> _CitedName:
+    """Parse the first cited author.
+
+    "Silva, L. C.; Souza" -> words ["silva"], initials ["l", "c"]
+    "Smith JD"            -> words ["smith"], initials ["j", "d"]
+    "World Health Organization (WHO)" -> words ["world", "health", "organization"]
+    """
+    first = re.split(r";|&|\bet al\b|\band\b|\s+e\s+|\s+y\s+", author, maxsplit=1, flags=re.I)[0]
+    first = re.sub(r"\([^)]*\)", " ", first)  # "(WHO)" and similar asides
+    raw = [w for w in re.split(r"[\s,.]+", first) if w]
+    has_lower = any(not w.isupper() for w in raw)
+    if len(raw) == 1 and raw[0].isupper() and raw[0].isalpha() and 2 <= len(raw[0]) <= 6:
+        return _CitedName([], list(_normalize(raw[0])))  # a bare acronym like "WHO"
+    words: list[str] = []
+    initials: list[str] = []
+    for w in raw:
+        norm = _normalize(w)
+        if not norm or norm in _AUTHOR_NOISE:
+            continue
+        if len(norm) == 1:
+            initials.append(norm)
+        elif has_lower and w.isupper() and len(w) <= 3:  # "JD" in "Smith JD"
+            initials.extend(norm)
+        elif norm not in _SURNAME_PARTICLES:
+            words.extend(norm.split())
+    return _CitedName(words, initials)
+
+
+def _name_part_in(word: str, names: list[str]) -> bool:
+    """A cited name part matches a record part, or a record initial ("Camilo" ~ "C.")."""
+    for n in names:
+        if n == word or (len(n) == 1 and n == word[0]):
+            return True
+        if len(n) > 3 and len(word) > 3 and fuzz.ratio(word, n) >= TOKEN_SIMILARITY:
+            return True
+    return False
+
+
+def _author_matches(cited: _CitedName, paper: Paper) -> bool | None:
+    """True if one record author is compatible with the whole cited name.
+
+    Every cited name part must match a part (or initial) of the same record
+    author, and at least one part must match in full, so a shared given name
+    ("John") is never enough. Word order is free: "Wang Wei" and "W. Wang" agree.
+    None when there is nothing to check on either side.
+    """
+    authors = [_normalize(a.name).split() for a in paper.authors if a.name.strip()]
+    if not authors or not (cited.words or cited.initials):
+        return None
+    for names in authors:
+        if not cited.words:  # only an acronym like "WHO": match it against the initials
+            if [n[0] for n in names if n not in _SURNAME_PARTICLES] == cited.initials:
+                return True
+            continue
+        full_hit = any(
+            w in names
+            or any(
+                len(n) > 3 and len(w) > 3 and fuzz.ratio(w, n) >= TOKEN_SIMILARITY for n in names
+            )
+            for w in cited.words
+        )
+        if (
+            full_hit
+            and all(_name_part_in(w, names) for w in cited.words)
+            and all(any(n[0] == i for n in names) for i in cited.initials)
+        ):
+            return True
+    return False
 
 
 @dataclass(frozen=True)
@@ -168,7 +248,7 @@ def score_candidate(
     paper: Paper, author: str, year: int | None, title_fragment: str
 ) -> CitationMatch:
     coverage, title_ok = _title_match(title_fragment, paper.title)
-    author_ok = _author_matches(_cited_surname(author), paper)
+    author_ok = _author_matches(_cited_name(author), paper)
     year_delta = abs(paper.year - year) if year and paper.year else None
     return CitationMatch(paper, coverage, title_ok, author_ok, year_delta)
 

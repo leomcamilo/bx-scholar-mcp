@@ -12,6 +12,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import httpx
+import pytest
 from mcp.server.fastmcp import FastMCP
 
 from bx_scholar_core.clients.europepmc import (
@@ -297,3 +298,21 @@ class TestCodexReviewRegressions:
         assert r["truncated_section"] == "1 Introduction"
         assert "5 Concluding remarks" in r["omitted_sections"]
         await pool.aclose()
+
+
+@pytest.mark.parametrize(
+    ("doi", "valid"),
+    [
+        ("10.1000.10/123456", True),  # subdivided prefix (DOI Handbook)
+        ("10.1016/S0140-6736(20)30183-5", True),
+        ("10.1002/(SICI)1097-4571(199806)49:8<693::AID-ASI3>3.0.CO;2-0", True),
+        ("10.1234/a#b", True),
+        ('10.9999/x" OR PMCID:PMC123', False),
+        ("10.1234/a b", False),
+        ("10.1/x", False),
+    ],
+)
+def test_doi_validation(doi: str, valid: bool) -> None:
+    from bx_scholar_core.id_resolver import is_valid_doi
+
+    assert is_valid_doi(doi) is valid
