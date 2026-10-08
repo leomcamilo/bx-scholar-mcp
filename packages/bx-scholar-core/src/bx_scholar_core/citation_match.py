@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from collections import Counter
 from dataclasses import dataclass
 from typing import Literal
 
@@ -55,9 +54,6 @@ SINGLE_WORD_TITLE_RATIO = 90
 # Scripts written without spaces (CJK) are compared as character strings.
 UNSPACED_MIN_CHARS = 3
 MAX_YEAR_DELTA = 1
-# "COVID 19" and "Phase 2" are one term; "effects 6 hours" is not. A space
-# joins letters to a following number only after a short, non-stopword run.
-SPACE_JOIN_MAX_LEN = 5
 
 _STOPWORDS = frozenset(
     ["the", "and", "for", "with", "from", "into", "onto", "over", "under", "about", "between", "among", "of", "in", "on", "at", "to", "by", "an", "its", "their", "this", "that", "these", "those", "how", "what", "why", "when", "where", "which", "who", "is", "are", "o", "a", "os", "as", "um", "uma", "uns", "umas", "de", "da", "do", "das", "dos", "em", "no", "na", "nos", "nas", "para", "por", "com", "sem", "sobre", "entre", "e", "ou", "que", "como", "el", "la", "los", "las", "del", "y", "en", "con", "se"]
@@ -88,25 +84,29 @@ def _fold(text: str) -> str:
 def _normalize(text: str) -> str:
     """Folded text as space-separated alphanumeric terms.
 
-    Letters followed by a number become one term across any dash ("COVID-19",
-    "COVID\u201319" -> "covid19") or across a space after a short word ("COVID 19",
-    "Phase 2"). Terms like "h2o" or "c2h6o" are never split.
+    A dash between letters and digits is dropped in either direction, so
+    "COVID-19" -> "covid19", "3-D" -> "3d", "interleukin-6" -> "interleukin6";
+    terms like "h2o" or "c2h6o" are never split. Spaces are never joined:
+    "risk 10" stays two words. Spaced and joined spellings are reconciled when
+    terms are compared (see _pieces).
     """
     text = _fold(text)
-    text = re.sub(rf"(?<=[^\W\d_])[-{_DASHES}](?=\d)", "", text)
-
-    def join_space(m: re.Match[str]) -> str:
-        word = m.group(1)
-        if len(word) <= SPACE_JOIN_MAX_LEN and word not in _STOPWORDS:
-            return word + m.group(2)
-        return m.group(0)
-
-    text = re.sub(r"\b([^\W\d_]+) (\d+)\b", join_space, text)
+    text = re.sub(rf"(?<=[^\W\d_])[-{_DASHES}](?=\d)|(?<=\d)[-{_DASHES}](?=[^\W\d_])", "", text)
     return re.sub(r"[\W_]+", " ", text).strip()
 
 
 def _content_tokens(text: str) -> list[str]:
     return [t for t in _normalize(text).split() if t not in _STOPWORDS]
+
+
+def _pieces(token: str) -> list[str]:
+    """Letter and digit runs of a term, in order: "covid19" -> ["covid", "19"]."""
+    return re.findall(r"[^\W\d_]+|\d+", token)
+
+
+def _piece_seq(normalized: str) -> list[str]:
+    """Every term of a normalized text as pieces, stopwords included."""
+    return [p for t in normalized.split() for p in _pieces(t)]
 
 
 def _is_discriminant(token: str) -> bool:
@@ -119,17 +119,42 @@ def _is_discriminant(token: str) -> bool:
     )
 
 
-def _discriminants_present(frag_tokens: list[str], title_tokens: list[str]) -> bool:
-    """Every discriminant of the fragment, with its multiplicity, is in the title."""
-    need = Counter(t for t in frag_tokens if _is_discriminant(t))
-    have = Counter(title_tokens)
-    return all(have[t] >= n for t, n in need.items())
+def _capital_letters(fragment: str) -> list[str]:
+    """Capital single letters not opening the fragment: the "A" of "Hepatitis A"
+    or "HLA-A", which would otherwise be dropped as a stopword. A leading "A"
+    ("A study of...") is the article."""
+    return [
+        m.group().lower()
+        for m in re.finditer(r"(?<![^\W_])[A-Z](?![^\W_])", fragment)
+        if fragment[: m.start()].strip()
+    ]
 
 
-def _token_in(token: str, pool: list[str]) -> bool:
+def _find(pieces: list[str], seq: list[str], used: list[bool]) -> int:
+    for i in range(len(seq) - len(pieces) + 1):
+        if seq[i : i + len(pieces)] == pieces and not any(used[i : i + len(pieces)]):
+            return i
+    return -1
+
+
+def _discriminants_present(terms: list[str], seq: list[str]) -> bool:
+    """Each discriminant term appears in the title as consecutive pieces, using a
+    title position at most once: "IL-6 effects at 6 hours" needs two distinct 6s,
+    "c2h6o" does not match "c6h2o", and "covid19" matches "COVID 19"."""
+    used = [False] * len(seq)
+    for term in sorted(terms, key=lambda t: -len(_pieces(t))):
+        pieces = _pieces(term)
+        i = _find(pieces, seq, used)
+        if i < 0:
+            return False
+        used[i : i + len(pieces)] = [True] * len(pieces)
+    return True
+
+
+def _token_in(token: str, title_tokens: list[str], seq: list[str]) -> bool:
     if _is_discriminant(token):
-        return token in pool
-    return any(fuzz.ratio(token, p) >= TOKEN_SIMILARITY for p in pool)
+        return _find(_pieces(token), seq, [False] * len(seq)) >= 0
+    return any(fuzz.ratio(token, p) >= TOKEN_SIMILARITY for p in title_tokens)
 
 
 def _title_match(fragment: str, title: str) -> tuple[float, bool]:
@@ -141,7 +166,8 @@ def _title_match(fragment: str, title: str) -> tuple[float, bool]:
     if _UNSPACED.search(fragment):
         # Latin/number runs inside CJK text ("城市交通COVID-19") are discriminants
         latin = [t for t in re.findall(r"[a-z0-9]+", frag) if _is_discriminant(t)]
-        if not _discriminants_present(latin, re.findall(r"[a-z0-9]+", full)):
+        title_seq = [p for t in re.findall(r"[a-z0-9]+", full) for p in _pieces(t)]
+        if not _discriminants_present(latin, title_seq):
             return 0.0, False
         f, t = frag.replace(" ", ""), full.replace(" ", "")
         if f == t:
@@ -153,10 +179,15 @@ def _title_match(fragment: str, title: str) -> tuple[float, bool]:
 
     frag_tokens = _content_tokens(fragment)
     title_tokens = _content_tokens(title)
-    if not _discriminants_present(frag_tokens, title_tokens):
+    seq = _piece_seq(full)
+    terms = [t for t in frag_tokens if _is_discriminant(t)] + [
+        c for c in _capital_letters(fragment) if c in _STOPWORDS
+    ]
+    if not _discriminants_present(terms, seq):
         return 0.0, False
     if len(frag_tokens) >= 2:
-        coverage = sum(_token_in(t, title_tokens) for t in frag_tokens) / len(frag_tokens)
+        hits = sum(_token_in(t, title_tokens, seq) for t in frag_tokens)
+        coverage = hits / len(frag_tokens)
         return coverage, coverage >= MIN_TITLE_COVERAGE
 
     # One content word (or none, e.g. "What are the limits"): compare the whole
@@ -183,6 +214,9 @@ class _Part:
 class _Name:
     surname: tuple[_Part, ...]  # last part is the key; earlier ones may be abbreviated
     given: tuple[_Part, ...]
+    # Read from a bare compound surname ("García Márquez"): its parts must be the
+    # last parts of the record name, in order.
+    compound: bool = False
 
 
 @dataclass(frozen=True)
@@ -203,7 +237,15 @@ def _part(token: str, grouped_initials_ok: bool) -> _Part | None:
     looks_initials = bool(_INITIALS.fullmatch(word)) and (
         len(letters) == 1 or "." in word or "-" in word
     )
-    if looks_initials or (grouped_initials_ok and word.isupper() and len(letters) <= 3):
+    # Capitals without dots count as grouped initials only with no vowel: "JD" in
+    # "Smith JD" is initials, "WEI" in "WEI Li" and "LI" in "Wei LI" are names.
+    grouped = (
+        grouped_initials_ok
+        and word.isupper()
+        and len(letters) <= 3
+        and not set(letters) & set("aeiouy")
+    )
+    if looks_initials or grouped:
         return _Part("", tuple(letters))  # "J.", "J.D.", "M-J", "JD" in "Smith JD"
     components = [c for c in re.split(rf"[-{_DASHES}]", _fold(word)) if c]
     text = "".join(c for c in "".join(components) if c.isalnum())
@@ -245,6 +287,8 @@ def _parse_author(name: str) -> _Author:
             readings.append(_Name((parts[last],), tuple(parts[:last] + parts[last + 1 :])))
             if len(parts) == 2 and len(full) == 2:  # "Wang Wei": surname may come first
                 readings.append(_Name((parts[0],), (parts[1],)))
+            if len(full) >= 2 and len(full) == len(parts):  # "García Márquez"
+                readings.append(_Name(tuple(parts), (), compound=True))
     acronyms = aliases
     if len(base.split()) == 1 and base.isupper() and base.isalpha() and 2 <= len(base) <= 6:
         acronyms = acronyms | {_fold(base)}  # a bare "WHO" may stand for an organization
@@ -261,7 +305,28 @@ def _compatible(a: _Part, b: _Part) -> bool:
     return bool(a.initials and b.initials) and a.initials[0] == b.initials[0]
 
 
+def _flat_given(parts: tuple[_Part, ...] | list[_Part]) -> list[_Part]:
+    """Split grouped initials ("J.D." -> "J.", "D.") so given names line up."""
+    out: list[_Part] = []
+    for p in parts:
+        if p.text:
+            out.append(p)
+        else:
+            out.extend(_Part("", (i,)) for i in p.initials)
+    return out
+
+
 def _same_person(cited: _Name, record: _Name) -> bool:
+    if record.compound:
+        # The bare-compound reading is for what the user typed; read on a record
+        # it would turn every given name into surname and skip the given-name check.
+        return False
+    if cited.compound:
+        natural = [p for p in (*record.given, *record.surname) if p.text]
+        tail = natural[-len(cited.surname) :]
+        return len(tail) == len(cited.surname) and all(
+            _compatible(c, r) for c, r in zip(cited.surname, tail, strict=True)
+        )
     key = cited.surname[-1]
     record_parts = list(record.surname) + list(record.given)
     hit = next((p for p in record.surname if p.text and _same_word(key.text, p.text)), None)
@@ -275,29 +340,30 @@ def _same_person(cited: _Name, record: _Name) -> bool:
         if match is None:
             return False
         remaining.remove(match)
-    # First given names must agree when both sides have one; a missing middle
-    # name or initial on either side is not a conflict.
-    record_given = [p for p in remaining if p in record.given]
-    if cited.given and record_given:
-        return _compatible(cited.given[0], record_given[0])
-    return True
+    # Given names present on both sides must agree position by position; a name
+    # missing on one side ("John Smith" vs "John D. Smith") is not a conflict,
+    # but "John Stuart" vs "John James" is.
+    record_given = _flat_given([p for p in remaining if p in record.given])
+    return all(
+        _compatible(c, r) for c, r in zip(_flat_given(cited.given), record_given, strict=False)
+    )
 
 
 def _same_author(cited: _Author, record: _Author) -> bool:
+    if cited.institution and record.institution:
+        # Both names are spelled out: they decide. Generated acronyms collide
+        # ("University of Cambridge" / "University of Chicago" are both "uc").
+        return fuzz.ratio(cited.institution, record.institution) >= SINGLE_WORD_TITLE_RATIO
     if cited.institution or record.institution:
-        both_named = cited.institution and record.institution
-        if (
-            both_named
-            and fuzz.ratio(cited.institution, record.institution) >= SINGLE_WORD_TITLE_RATIO
-        ):
-            return True
         return bool(cited.acronyms & record.acronyms)
     return any(_same_person(c, r) for c in cited.readings for r in record.readings)
 
 
 def _author_matches(author: str, paper: Paper) -> bool | None:
     """True if a record author is the cited first author; None if not checkable."""
-    first = re.split(r";|&|\bet al\b|\band\b|\s+e\s+|\s+y\s+", author, maxsplit=1, flags=re.I)[0]
+    first = re.split(r";|\bet al\b", author, maxsplit=1, flags=re.I)[0]
+    if not _INSTITUTION.search(first):  # "and"/"e" belong to names like "... de Geografia e ..."
+        first = re.split(r"&|\band\b|\s+e\s+|\s+y\s+", first, maxsplit=1, flags=re.I)[0]
     cited = _parse_author(first)
     records = [_parse_author(a.name) for a in paper.authors if a.name.strip()]
     if not (cited.readings or cited.institution or cited.acronyms) or not records:
