@@ -34,9 +34,7 @@ def serve_http(server: FastMCP) -> None:
 
     token = os.environ.get("BX_SCHOLAR_TOKEN", "").strip()
     if not token:
-        print(
-            "[FATAL] BX_SCHOLAR_TOKEN is required to serve over HTTP", file=sys.stderr
-        )
+        print("[FATAL] BX_SCHOLAR_TOKEN is required to serve over HTTP", file=sys.stderr)
         raise SystemExit(1)
 
     expected = f"Bearer {token}"

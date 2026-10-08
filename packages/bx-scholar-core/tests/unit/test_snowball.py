@@ -28,7 +28,9 @@ class TestCleanReferenceLines:
         assert lines[2].startswith("Page")
 
     def test_drops_short_lines(self) -> None:
-        lines = clean_reference_lines("References\n\n[1] ok\nWohlin, C. (2014). Guidelines for snowballing in systematic studies.")
+        lines = clean_reference_lines(
+            "References\n\n[1] ok\nWohlin, C. (2014). Guidelines for snowballing in systematic studies."
+        )
         assert len(lines) == 1
 
 
@@ -40,8 +42,13 @@ class TestSnowballBFS:
             return graph.get((doi, direction), [])
 
         papers, edges, stats = await snowball_bfs(
-            fetch, ["10.1/seed"], ["references"], max_depth=1,
-            max_papers=100, min_cited_by=0, year_from=None,
+            fetch,
+            ["10.1/seed"],
+            ["references"],
+            max_depth=1,
+            max_papers=100,
+            min_cited_by=0,
+            year_from=None,
         )
         assert {p.doi for p in papers} == {"10.1/a", "10.1/b"}
         assert len(edges) == 2
@@ -60,8 +67,13 @@ class TestSnowballBFS:
             return graph.get((doi, direction), [])
 
         papers, edges, stats = await snowball_bfs(
-            fetch, ["10.1/seed"], ["references"], max_depth=2,
-            max_papers=100, min_cited_by=0, year_from=None,
+            fetch,
+            ["10.1/seed"],
+            ["references"],
+            max_depth=2,
+            max_papers=100,
+            min_cited_by=0,
+            year_from=None,
         )
         assert {p.doi for p in papers} == {"10.1/a", "10.1/b"}  # 'a' only once
         assert len(edges) == 3  # all edges recorded, including duplicate target
@@ -74,8 +86,13 @@ class TestSnowballBFS:
             return refs if doi == "10.1/seed" else []
 
         papers, _, _ = await snowball_bfs(
-            fetch, ["10.1/seed"], ["references"], max_depth=1,
-            max_papers=3, min_cited_by=2, year_from=2013,
+            fetch,
+            ["10.1/seed"],
+            ["references"],
+            max_depth=1,
+            max_papers=3,
+            min_cited_by=2,
+            year_from=2013,
         )
         assert len(papers) == 3
         assert all(p.cited_by_count >= 2 and p.year >= 2013 for p in papers)
@@ -90,8 +107,13 @@ class TestSnowballBFS:
             return graph.get((doi, direction), [])
 
         papers, edges, _ = await snowball_bfs(
-            fetch, ["10.1/seed"], ["references", "citing"], max_depth=1,
-            max_papers=100, min_cited_by=0, year_from=None,
+            fetch,
+            ["10.1/seed"],
+            ["references", "citing"],
+            max_depth=1,
+            max_papers=100,
+            min_cited_by=0,
+            year_from=None,
         )
         assert {e["type"] for e in edges} == {"reference", "citation"}
         assert len(papers) == 2
@@ -104,7 +126,12 @@ class TestSnowballBFS:
             return graph.get((doi, direction), [])
 
         _, _, stats = await snowball_bfs(
-            fetch, ["10.1/seed"], ["references"], max_depth=2,
-            max_papers=500, min_cited_by=0, year_from=None,
+            fetch,
+            ["10.1/seed"],
+            ["references"],
+            max_depth=2,
+            max_papers=500,
+            min_cited_by=0,
+            year_from=None,
         )
         assert stats[1]["frontier_truncated"] == 5
