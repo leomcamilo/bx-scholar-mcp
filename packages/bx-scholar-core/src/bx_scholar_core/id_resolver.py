@@ -11,6 +11,11 @@ IDType = Literal["doi", "arxiv", "openalex", "s2", "pmid", "pmcid", "unknown"]
 _DOI_PREFIXES = ("https://doi.org/", "http://doi.org/", "doi:")
 _ARXIV_RE = re.compile(r"^(\d{4}\.\d{4,5})(v\d+)?$")
 _OPENALEX_RE = re.compile(r"^W\d+$", re.IGNORECASE)
+# A DOI safe to put inside a quoted query: no whitespace, quote or backslash.
+# The prefix may be subdivided (10.1000.10/123); parentheses, "<>;#?" stay, as
+# real DOIs use them (10.1016/S0140-6736(20)30183-5). Code that puts a DOI in a
+# URL path must percent-encode it.
+DOI_RE = re.compile(r'10\.\d{4,9}(?:\.\d+)*/[^\s"\\]+')
 _PMCID_RE = re.compile(r"(?:^|/)(PMC\d+)/?$", re.IGNORECASE)
 # A bare number is ambiguous, so a PMID needs a "pmid:" prefix or a PubMed URL.
 _PMID_RE = re.compile(r"^(?:pmid:\s*|https?://pubmed\.ncbi\.nlm\.nih\.gov/)(\d+)/?$", re.I)
@@ -72,3 +77,7 @@ def resolve_id(raw: str) -> ResolvedID:
         return ResolvedID(id_type="s2", value=s, raw=raw)
 
     return ResolvedID(id_type="unknown", value=s, raw=raw)
+
+
+def is_valid_doi(value: str) -> bool:
+    return bool(DOI_RE.fullmatch(value))

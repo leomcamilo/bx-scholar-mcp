@@ -12,6 +12,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import httpx
+import pytest
 from mcp.server.fastmcp import FastMCP
 
 from bx_scholar_core.clients.europepmc import (
@@ -228,7 +229,7 @@ class TestGetFulltextTool:
     async def test_unavailable_points_to_pdf_path(self, tmp_path) -> None:
         empty = {"hitCount": 0, "resultList": {"result": []}}
         server, pool = self._server(tmp_path, lambda r: httpx.Response(200, json=empty))
-        r = await self._call(server, {"identifier": "10.1/closed"})
+        r = await self._call(server, {"identifier": "10.1234/closed"})
         assert r["available"] is False
         assert "download_pdf" in r["next_step"]
         await pool.aclose()
@@ -238,3 +239,80 @@ class TestGetFulltextTool:
         r = await self._call(server, {"identifier": "W123"})
         assert "error" in r
         await pool.aclose()
+
+
+class TestCodexReviewRegressions:
+    """Findings from the Codex (gpt-6-astra) review of 2026-10-08."""
+
+    async def test_doi_injection_rejected(self) -> None:
+        import pytest
+
+        client, seen = _client(lambda r: httpx.Response(200, json=_json("search")))
+        with pytest.raises(ValueError):
+            await client.lookup("doi", '10.9999/x" OR PMCID:PMC123 OR DOI:"10.9999/y')
+        assert seen == []  # never reached the API
+        await client.close()
+
+    async def test_doi_with_parentheses_allowed(self) -> None:
+        client, seen = _client(lambda r: httpx.Response(200, json={"resultList": {"result": []}}))
+        await client.lookup("doi", "10.1016/S0140-6736(20)30183-5")
+        assert parse_qs(urlparse(str(seen[0].url)).query)["query"] == [
+            'DOI:"10.1016/S0140-6736(20)30183-5"'
+        ]
+        await client.close()
+
+    async def test_lookup_rejects_hit_with_other_identifier(self) -> None:
+        """Even if the query matched something else, a different paper is not returned."""
+        client, _ = _client(lambda r: httpx.Response(200, json=_json("search")))
+        assert await client.lookup("doi", "10.1234/not-in-results") is None
+        await client.close()
+
+    async def test_fulltext_403_raises_instead_of_unavailable(self) -> None:
+        import pytest
+
+        from bx_scholar_core.clients.base import NonRetryableHTTPError
+
+        client, _ = _client(lambda r: httpx.Response(403))
+        with pytest.raises(NonRetryableHTTPError):
+            await client.fulltext_xml("PMC1")
+        await client.close()
+
+    async def test_tool_reports_blocked_source_as_error(self, tmp_path) -> None:
+        def handler(req: httpx.Request) -> httpx.Response:
+            if req.url.path.endswith("/fullTextXML"):
+                return httpx.Response(403)
+            return httpx.Response(200, json=_json("search"))
+
+        t = TestGetFulltextTool()
+        server, pool = t._server(tmp_path, handler)
+        r = await t._call(server, {"identifier": "PMC11688368"})
+        assert "available" not in r
+        assert "403" in r["error"]
+        await pool.aclose()
+
+    async def test_max_chars_caps_first_section(self, tmp_path) -> None:
+        t = TestGetFulltextTool()
+        server, pool = t._server(tmp_path, TestGetFulltextTool._handler)
+        r = await t._call(server, {"identifier": "PMC11688368", "max_chars": 100})
+        assert sum(len(s["text"]) for s in r["sections"]) == 100
+        assert r["truncated_section"] == "1 Introduction"
+        assert "5 Concluding remarks" in r["omitted_sections"]
+        await pool.aclose()
+
+
+@pytest.mark.parametrize(
+    ("doi", "valid"),
+    [
+        ("10.1000.10/123456", True),  # subdivided prefix (DOI Handbook)
+        ("10.1016/S0140-6736(20)30183-5", True),
+        ("10.1002/(SICI)1097-4571(199806)49:8<693::AID-ASI3>3.0.CO;2-0", True),
+        ("10.1234/a#b", True),
+        ('10.9999/x" OR PMCID:PMC123', False),
+        ("10.1234/a b", False),
+        ("10.1/x", False),
+    ],
+)
+def test_doi_validation(doi: str, valid: bool) -> None:
+    from bx_scholar_core.id_resolver import is_valid_doi
+
+    assert is_valid_doi(doi) is valid

@@ -13,8 +13,9 @@ from typing import Any
 from defusedxml import ElementTree as ET
 
 from bx_scholar_core.clients.base import AsyncHTTPClient, NonRetryableHTTPError
+from bx_scholar_core.id_resolver import is_valid_doi
 from bx_scholar_core.languages import to_iso639_1
-from bx_scholar_core.models.paper import Author, Paper, SourceType
+from bx_scholar_core.models.paper import MAX_AUTHORS, Author, Paper, SourceType
 
 EUROPEPMC_BASE = "https://www.ebi.ac.uk/europepmc/webservices/rest"
 
@@ -54,16 +55,45 @@ def _pdf_url(record: dict[str, Any]) -> str:
     return ""
 
 
+def _author(a: dict[str, Any]) -> Author:
+    if a.get("collectiveName") and not a.get("lastName"):
+        name = a["collectiveName"]
+        return Author(name=name, literal=name, kind="organization", structure_source="source")
+    family = (a.get("lastName") or "").strip()
+    given = (a.get("firstName") or a.get("initials") or "").strip()
+    if not family:
+        return Author(name=a.get("fullName", ""))
+    return Author(
+        name=f"{given} {family}".strip(), family=family, given=given, structure_source="source"
+    )
+
+
+def _authors_from_string(author_string: str) -> list[Author]:
+    """Split "Janzam A, Bellott L, Chicher J." into one Author each.
+
+    Europe PMC writes each name as "Lastname Initials"; the surname is every word
+    but the last when the last is all capitals (the initials).
+    """
+    out = []
+    for raw in author_string.rstrip(".").split(","):
+        words = raw.split()
+        if not words:
+            continue
+        if len(words) > 1 and words[-1].isupper() and len(words[-1]) <= 4:
+            family, given = " ".join(words[:-1]), words[-1]
+            out.append(
+                Author(name=raw.strip(), family=family, given=given, structure_source="source")
+            )
+        else:
+            out.append(Author(name=raw.strip()))
+    return out[:MAX_AUTHORS]
+
+
 def parse_record(record: dict[str, Any]) -> Paper:
     """Parse a Europe PMC ``resultType=core`` record into a Paper."""
     journal = (record.get("journalInfo") or {}).get("journal") or {}
     authors = [
-        Author(
-            name=f"{a['firstName']} {a['lastName']}"
-            if a.get("firstName") and a.get("lastName")
-            else a.get("fullName") or a.get("collectiveName", "")
-        )
-        for a in ((record.get("authorList") or {}).get("author") or [])[:10]
+        _author(a) for a in ((record.get("authorList") or {}).get("author") or [])[:MAX_AUTHORS]
     ]
     year = str(record.get("pubYear") or "")
     source, rid = record.get("source", ""), record.get("id", "")
@@ -97,7 +127,7 @@ def _parse_link(item: dict[str, Any]) -> Paper:
         title=(item.get("title") or "").rstrip("."),
         doi=item.get("doi", ""),
         year=int(year) if year.isdigit() else None,
-        authors=[Author(name=item["authorString"])] if item.get("authorString") else [],
+        authors=_authors_from_string(item.get("authorString") or ""),
         journal=item.get("journalAbbreviation", ""),
         cited_by_count=item.get("citedByCount") or 0,
         pmid=item.get("id", "") if item.get("source") == "MED" else "",
@@ -139,18 +169,25 @@ class EuropePMCClient(AsyncHTTPClient):
         )
 
     async def lookup(self, id_type: str, value: str) -> Paper | None:
-        """Fetch one record by "doi", "pmid" or "pmcid"."""
+        """Fetch one record by "doi", "pmid" or "pmcid".
+
+        The value is validated before it goes into the query (quotes, spaces or
+        OR/AND would otherwise rewrite it) and the hit must carry the same
+        identifier, so a lookup never returns a different paper.
+        """
         # Only DOI may be quoted: EXT_ID:"123" and PMCID:"PMC1" match nothing.
-        if id_type == "doi":
+        if id_type == "doi" and is_valid_doi(value):
             query = f'DOI:"{value}"'
         elif id_type == "pmid" and value.isdigit():
             query = f"EXT_ID:{value} AND SRC:MED"
         elif id_type == "pmcid" and re.fullmatch(r"PMC\d+", value, re.I):
-            query = f"PMCID:{value.upper()}"
+            value = value.upper()
+            query = f"PMCID:{value}"
         else:
-            raise ValueError(f"Unsupported {id_type} for Europe PMC lookup: {value!r}")
-        papers, _ = await self._search(query, 1, ("paper_metadata", 7 * 86400))
-        return papers[0] if papers else None
+            raise ValueError(f"Invalid {id_type} for Europe PMC lookup: {value!r}")
+        papers, _ = await self._search(query, 3, ("paper_metadata", 7 * 86400))
+        field = {"doi": "doi", "pmid": "pmid", "pmcid": "pmcid"}[id_type]
+        return next((p for p in papers if getattr(p, field).lower() == value.lower()), None)
 
     async def _search(
         self, query: str, limit: int, cache_policy: tuple[str, int]
@@ -186,11 +223,17 @@ class EuropePMCClient(AsyncHTTPClient):
         return [_parse_link(i) for i in items]
 
     async def fulltext_xml(self, pmcid: str) -> str | None:
-        """JATS XML of an open-access PMC article, or None if Europe PMC has no full text."""
+        """JATS XML of an open-access PMC article, or None if Europe PMC has no full text.
+
+        Only 404 means "no full text"; any other HTTP error (403, 400...) is raised so
+        a blocked or broken source is not reported as a missing article.
+        """
         try:
             resp = await self.get(f"/{pmcid}/fullTextXML", cache_policy=("fulltext", 30 * 86400))
-        except NonRetryableHTTPError:
-            return None
+        except NonRetryableHTTPError as exc:
+            if exc.status_code == 404:
+                return None
+            raise
         return resp.text
 
 

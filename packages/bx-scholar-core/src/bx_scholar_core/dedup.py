@@ -1,4 +1,4 @@
-"""Paper deduplication — DOI exact match + title similarity fallback."""
+"""Paper deduplication — shared DOI/PMID first, title similarity as fallback."""
 
 from __future__ import annotations
 
@@ -8,29 +8,39 @@ from bx_scholar_core.models.paper import Paper
 
 
 def deduplicate(papers: list[Paper]) -> list[Paper]:
-    """Deduplicate papers by DOI or PMID (exact) then by title similarity + year.
+    """Deduplicate papers by shared identifiers, then by title similarity + year.
 
-    For papers with the same DOI (or PMID, when there is no DOI): keeps the one
-    with more metadata. For papers with neither: matches if title similarity
-    >90% AND same year.
+    Records that share any identifier (DOI or PMID) are the same work, even when
+    only one copy has the DOI: they are grouped and the one with more metadata is
+    kept. Records with no identifier match if title similarity >90% AND same year.
     """
-    seen_ids: dict[str, Paper] = {}
+    groups: list[list[Paper]] = []
+    group_of: dict[str, int] = {}
     no_id: list[Paper] = []
-    result: list[Paper] = []
 
     for paper in papers:
-        key = _id_key(paper)
-        if key:
-            if key in seen_ids:
-                existing = seen_ids[key]
-                if _metadata_score(paper) > _metadata_score(existing):
-                    seen_ids[key] = paper
-            else:
-                seen_ids[key] = paper
-        else:
+        keys = _id_keys(paper)
+        if not keys:
             no_id.append(paper)
+            continue
+        hits = sorted({group_of[k] for k in keys if k in group_of})
+        if hits:
+            target = hits[0]
+            for other in hits[1:]:  # this paper bridges groups: merge them
+                groups[target].extend(groups[other])
+                groups[other] = []
+                for k, g in group_of.items():
+                    if g == other:
+                        group_of[k] = target
+        else:
+            target = len(groups)
+            groups.append([])
+        groups[target].append(paper)
+        for k in keys:
+            group_of[k] = target
 
-    result.extend(seen_ids.values())
+    # max() keeps the first of equals, so ties resolve to the earliest record
+    result = [max(g, key=_metadata_score) for g in groups if g]
 
     # Deduplicate id-less papers against the others and each other
     for paper in no_id:
@@ -40,11 +50,13 @@ def deduplicate(papers: list[Paper]) -> list[Paper]:
     return result
 
 
-def _id_key(paper: Paper) -> str:
-    doi = paper.doi.lower().strip()
-    if doi:
-        return f"doi:{doi}"
-    return f"pmid:{paper.pmid}" if paper.pmid else ""
+def _id_keys(paper: Paper) -> list[str]:
+    keys = []
+    if paper.doi.strip():
+        keys.append(f"doi:{paper.doi.lower().strip()}")
+    if paper.pmid.strip():
+        keys.append(f"pmid:{paper.pmid.strip()}")
+    return keys
 
 
 def _metadata_score(paper: Paper) -> int:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 
 from bx_scholar_core.clients.base import AsyncHTTPClient
-from bx_scholar_core.models.paper import Author, Paper
+from bx_scholar_core.models.paper import MAX_AUTHORS, Author, Paper
 
 ARXIV_BASE = "https://export.arxiv.org/api/query"
 _NS = {"atom": "http://www.w3.org/2005/Atom", "arxiv": "http://arxiv.org/schemas/atom"}
@@ -72,7 +72,7 @@ class ArXivClient(AsyncHTTPClient):
                     title=title,
                     doi="",
                     year=int(published[:4]) if len(published) >= 4 else None,
-                    authors=authors[:10],
+                    authors=authors[:MAX_AUTHORS],
                     abstract=abstract,
                     arxiv_id=arxiv_id,
                     source_type="grey_literature",

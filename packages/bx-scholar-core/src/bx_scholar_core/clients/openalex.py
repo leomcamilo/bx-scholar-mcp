@@ -6,7 +6,7 @@ from typing import Any
 
 from bx_scholar_core.clients.base import AsyncHTTPClient
 from bx_scholar_core.logging import get_logger
-from bx_scholar_core.models.paper import Author, Paper
+from bx_scholar_core.models.paper import MAX_AUTHORS, Author, Paper
 
 logger = get_logger(__name__)
 
@@ -36,7 +36,7 @@ def _parse_work(work: dict[str, Any]) -> Paper:
             name=a.get("author", {}).get("display_name", ""),
             openalex_id=(a.get("author", {}).get("id") or "").replace("https://openalex.org/", ""),
         )
-        for a in (work.get("authorships") or [])[:10]
+        for a in (work.get("authorships") or [])[:MAX_AUTHORS]
     ]
 
     work_type = work.get("type", "")
@@ -56,6 +56,8 @@ def _parse_work(work: dict[str, Any]) -> Paper:
         source_type = "unknown"
 
     return Paper(
+        authors_truncated=bool(work.get("is_authors_truncated"))
+        or len(work.get("authorships") or []) > MAX_AUTHORS,
         title=work.get("title") or "",
         doi=doi_raw,
         year=work.get("publication_year"),

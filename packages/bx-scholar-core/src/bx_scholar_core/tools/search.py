@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 from bx_scholar_core.clients.vufind import THESIS_FORMATS
 from bx_scholar_core.dedup import deduplicate
 from bx_scholar_core.logging import get_logger
-from bx_scholar_core.models.paper import Paper
+from bx_scholar_core.models.paper import MAX_AUTHORS, Paper
 from bx_scholar_core.sources import PRESETS, SEARCH_SOURCES, SearchQuery, expand_sources
 
 if TYPE_CHECKING:
@@ -25,12 +25,19 @@ THESIS_DEGREES = {
 }
 
 
+def _dump(p: Paper) -> dict:
+    """A paper for the response, with at most MAX_AUTHORS authors."""
+    if len(p.authors) > MAX_AUTHORS:
+        p = p.model_copy(update={"authors": p.authors[:MAX_AUTHORS], "authors_truncated": True})
+    return p.model_dump(exclude_defaults=True)
+
+
 def _papers_to_json(papers: list[Paper], total: int = 0, meta: dict | None = None) -> str:
     """Serialize papers list to JSON string for MCP response."""
     result = {
         "total_results": total or len(papers),
         "returned": len(papers),
-        "results": [p.model_dump(exclude_defaults=True) for p in papers],
+        "results": [_dump(p) for p in papers],
     }
     if meta:
         result.update(meta)

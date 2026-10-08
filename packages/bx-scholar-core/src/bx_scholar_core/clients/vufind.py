@@ -12,7 +12,7 @@ from typing import Any
 
 from bx_scholar_core.clients.base import AsyncHTTPClient
 from bx_scholar_core.languages import to_iso639_1
-from bx_scholar_core.models.paper import Author, Paper, SourceType
+from bx_scholar_core.models.paper import MAX_AUTHORS, Author, Paper, SourceType
 
 _FIELDS = (
     "id", "title", "authors", "publicationDates", "summary", "urls", "formats",
@@ -38,6 +38,16 @@ def _person(name: str) -> str:
     """'Schmal, Dominic' -> 'Dominic Schmal'; names without a comma are kept."""
     last, sep, first = name.partition(",")
     return f"{first.strip()} {last.strip()}" if sep and first.strip() else name.strip()
+
+
+def _author(name: str) -> Author:
+    """VuFind stores persons as "Last, First"; keep the split it already made."""
+    last, sep, first = name.partition(",")
+    if sep and last.strip():
+        return Author(
+            name=_person(name), family=last.strip(), given=first.strip(), structure_source="source"
+        )
+    return Author(name=name.strip())
 
 
 class VuFindClient(AsyncHTTPClient):
@@ -112,7 +122,7 @@ class VuFindClient(AsyncHTTPClient):
             title=(record.get("title") or "").strip(),
             doi=record.get("cleanDoi") or "",
             year=int(year.group()) if year else None,
-            authors=[Author(name=_person(n)) for n in primary[:10]],
+            authors=[_author(n) for n in primary[:MAX_AUTHORS]],
             abstract=next(iter(record.get("summary") or []), "").strip(),
             source_type=source_type,
             language=to_iso639_1(next(iter(record.get("languages") or []), "")),
