@@ -15,7 +15,7 @@ from defusedxml import ElementTree as ET
 from bx_scholar_core.clients.base import AsyncHTTPClient, NonRetryableHTTPError
 from bx_scholar_core.id_resolver import is_valid_doi
 from bx_scholar_core.languages import to_iso639_1
-from bx_scholar_core.models.paper import Author, Paper, SourceType
+from bx_scholar_core.models.paper import MAX_AUTHORS, Author, Paper, SourceType
 
 EUROPEPMC_BASE = "https://www.ebi.ac.uk/europepmc/webservices/rest"
 
@@ -55,16 +55,45 @@ def _pdf_url(record: dict[str, Any]) -> str:
     return ""
 
 
+def _author(a: dict[str, Any]) -> Author:
+    if a.get("collectiveName") and not a.get("lastName"):
+        name = a["collectiveName"]
+        return Author(name=name, literal=name, kind="organization", structure_source="source")
+    family = (a.get("lastName") or "").strip()
+    given = (a.get("firstName") or a.get("initials") or "").strip()
+    if not family:
+        return Author(name=a.get("fullName", ""))
+    return Author(
+        name=f"{given} {family}".strip(), family=family, given=given, structure_source="source"
+    )
+
+
+def _authors_from_string(author_string: str) -> list[Author]:
+    """Split "Janzam A, Bellott L, Chicher J." into one Author each.
+
+    Europe PMC writes each name as "Lastname Initials"; the surname is every word
+    but the last when the last is all capitals (the initials).
+    """
+    out = []
+    for raw in author_string.rstrip(".").split(","):
+        words = raw.split()
+        if not words:
+            continue
+        if len(words) > 1 and words[-1].isupper() and len(words[-1]) <= 4:
+            family, given = " ".join(words[:-1]), words[-1]
+            out.append(
+                Author(name=raw.strip(), family=family, given=given, structure_source="source")
+            )
+        else:
+            out.append(Author(name=raw.strip()))
+    return out[:MAX_AUTHORS]
+
+
 def parse_record(record: dict[str, Any]) -> Paper:
     """Parse a Europe PMC ``resultType=core`` record into a Paper."""
     journal = (record.get("journalInfo") or {}).get("journal") or {}
     authors = [
-        Author(
-            name=f"{a['firstName']} {a['lastName']}"
-            if a.get("firstName") and a.get("lastName")
-            else a.get("fullName") or a.get("collectiveName", "")
-        )
-        for a in ((record.get("authorList") or {}).get("author") or [])[:10]
+        _author(a) for a in ((record.get("authorList") or {}).get("author") or [])[:MAX_AUTHORS]
     ]
     year = str(record.get("pubYear") or "")
     source, rid = record.get("source", ""), record.get("id", "")
@@ -98,7 +127,7 @@ def _parse_link(item: dict[str, Any]) -> Paper:
         title=(item.get("title") or "").rstrip("."),
         doi=item.get("doi", ""),
         year=int(year) if year.isdigit() else None,
-        authors=[Author(name=item["authorString"])] if item.get("authorString") else [],
+        authors=_authors_from_string(item.get("authorString") or ""),
         journal=item.get("journalAbbreviation", ""),
         cited_by_count=item.get("citedByCount") or 0,
         pmid=item.get("id", "") if item.get("source") == "MED" else "",

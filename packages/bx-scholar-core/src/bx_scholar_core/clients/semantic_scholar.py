@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from bx_scholar_core.clients.base import AsyncHTTPClient, NonRetryableHTTPError
-from bx_scholar_core.models.paper import Author, Paper
+from bx_scholar_core.models.paper import MAX_AUTHORS, Author, Paper
 
 S2_BASE = "https://api.semanticscholar.org/graph/v1"
 
@@ -31,7 +31,9 @@ def _parse_s2_paper(paper: dict[str, Any]) -> Paper:
         title=paper.get("title") or "",
         doi=ext_ids.get("DOI", ""),
         year=paper.get("year"),
-        authors=[Author(name=a.get("name", "")) for a in (paper.get("authors") or [])[:10]],
+        authors=[
+            Author(name=a.get("name", "")) for a in (paper.get("authors") or [])[:MAX_AUTHORS]
+        ],
         cited_by_count=paper.get("citationCount", 0),
         influential_citation_count=paper.get("influentialCitationCount", 0),
         journal=journal.get("name", "") if isinstance(journal, dict) else str(journal),

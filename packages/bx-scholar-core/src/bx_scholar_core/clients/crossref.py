@@ -6,15 +6,39 @@ from typing import Any
 
 from bx_scholar_core.citation_match import CitationMatch, best_match
 from bx_scholar_core.clients.base import AsyncHTTPClient, NonRetryableHTTPError
-from bx_scholar_core.models.paper import Author, Paper
+from bx_scholar_core.models.paper import MAX_AUTHORS, Author, Paper
 from bx_scholar_core.models.verification import RetractionStatus
 
 CROSSREF_BASE = "https://api.crossref.org"
 
 
+def _parse_author(a: dict[str, Any]) -> Author:
+    """Crossref gives persons as given/family and organizations as name."""
+    if a.get("name") and not a.get("family"):
+        return Author(
+            name=a["name"], literal=a["name"], kind="organization", structure_source="source"
+        )
+    family, given = (a.get("family") or "").strip(), (a.get("given") or "").strip()
+    return Author(
+        name=f"{given} {family}".strip(),
+        family=family,
+        given=given,
+        orcid=(a.get("ORCID") or "")
+        .replace("http://orcid.org/", "")
+        .replace("https://orcid.org/", ""),
+        structure_source="source" if family else "none",
+    )
+
+
 def _parse_item(item: dict[str, Any]) -> Paper:
     """Parse a CrossRef item into a canonical Paper."""
-    pub_date = item.get("published-print") or item.get("published-online") or {}
+    pub_date = (
+        item.get("published-print")
+        or item.get("published-online")
+        or item.get("published")
+        or item.get("issued")
+        or {}
+    )
     date_parts = pub_date.get("date-parts", [[None]])
     year = date_parts[0][0] if date_parts and date_parts[0] else None
 
@@ -38,10 +62,7 @@ def _parse_item(item: dict[str, Any]) -> Paper:
         title=(item.get("title") or [""])[0],
         doi=item.get("DOI", ""),
         year=year,
-        authors=[
-            Author(name=f"{a.get('given', '')} {a.get('family', '')}".strip())
-            for a in (item.get("author") or [])[:10]
-        ],
+        authors=[_parse_author(a) for a in (item.get("author") or [])[:MAX_AUTHORS]],
         cited_by_count=item.get("is-referenced-by-count", 0),
         journal=(item.get("container-title") or [""])[0],
         issn=(item.get("ISSN") or [""])[0],

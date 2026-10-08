@@ -20,10 +20,27 @@ SourceType = Literal[
 ]
 
 
+# Enough to verify a co-author well past the 10th position without carrying the
+# thousands of names of large physics collaborations.
+MAX_AUTHORS = 100
+
+
 class Author(BaseModel):
-    """Canonical author representation."""
+    """Canonical author representation.
+
+    ``name`` is the display form. When the source separates the parts (Crossref
+    family/given, Europe PMC lastName/firstName, "Last, First" catalogs), they
+    are kept in ``family``/``given`` with ``structure_source="source"``, so
+    citation matching never has to guess which word is the surname.
+    Organizations keep their name in ``literal`` with ``kind="organization"``.
+    """
 
     name: str
+    family: str = ""
+    given: str = ""
+    literal: str = ""
+    kind: Literal["person", "organization"] = "person"
+    structure_source: Literal["source", "inferred", "none"] = "none"
     openalex_id: str = ""
     orcid: str = ""
     h_index: int | None = None
