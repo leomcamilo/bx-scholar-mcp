@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- CiNii Research (`sources="cinii"`) and J-STAGE (`sources="jstage"`): Japanese articles; the `asia` preset now searches both. J-STAGE entries come in the article's language (Japanese title and names when it has them), with the English title in `external_ids["title_en"]`; untitled CiNii catalog entries are dropped
+- Optional `CINII_APPID` (free). CiNii and J-STAGE work without a key
 - CORE source (`sources="core"`, also in the `oa` preset): open-access outputs aggregated from repositories of every field
 - `get_fulltext` falls back to CORE when Europe PMC has no full text: CORE's extracted text with `CORE_API_KEY` (free), otherwise the PDF URL CORE hosts, ready for `download_pdf`
 - `check_open_access` tries CORE when Unpaywall has no PDF; the answer says where the PDF came from (`pdf_source`)
@@ -20,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A 429 with a long `Retry-After` (OpenAlex sends hours when the daily budget is gone) raised after ~3 minutes of sleeps and retries; it now fails at once with `QuotaExhaustedError` saying when the quota resets
 
 ### Changed
+- arXiv responses are parsed with `defusedxml`, like the other third-party XML
 - **`verify_citation` redesigned** (designed with a Codex review): retrieves candidates from Crossref and OpenAlex together, without a year filter, and decides per candidate. `status` is `verified`, `conflict` (an identified work contradicts the citation), `ambiguous` (several works match) or `insufficient`. A title confirms only as the full title, the main title or a literal contiguous passage of 4+ content words; similarity never confirms; a field missing on the record is not a match; authors use the source's family/given structure and every cited author must match a distinct record author. New `title_mode` (`auto`/`full`/`fragment`) and `next_action`; the "may be fabricated" message is gone. Replaces `citation_match.py`
 - `search_papers` and OpenAlex search sort by relevance by default (was citation count, which returned the most cited work vaguely matching the terms). Pass `sort="cited_by_count:desc"` to rank by impact. Ported from 1a561db (feat/http-service-and-hardening), which never reached main
 

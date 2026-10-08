@@ -24,6 +24,8 @@ QUERIES = {  # default: "smart city mobility"
     "bdtd": "mobilidade urbana",
     "oasisbr": "mobilidade urbana",
     "lareferencia": "movilidad urbana",
+    "cinii": "都市交通",
+    "jstage": "都市交通",
 }
 
 

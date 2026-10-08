@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed  xmlns="http://www.w3.org/2005/Atom"
+  xmlns:prism="http://prismstandard.org/namespaces/basic/2.0/"
+  xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/"
+  xml:lang="ja" > 
+  <result>
+    <status>0</status>
+    <message/>
+  </result>
+  <title>Articles</title>
+  <link href="https://api.jstage.jst.go.jp/searchapi/do?service=3&amp;keyword=urban%20mobility&amp;count=3&amp;pubyearfrom=2018&amp;pubyearto=2022"/>
+  <id>https://api.jstage.jst.go.jp/searchapi/do?service=3&amp;keyword=urban%20mobility&amp;count=3&amp;pubyearfrom=2018&amp;pubyearto=2022</id>
+  <servicecd>3</servicecd>
+  <updated>2026-10-09T08:50+09:00</updated>
+  <opensearch:totalResults>16</opensearch:totalResults>
+  <opensearch:startIndex>1</opensearch:startIndex>
+  <opensearch:itemsPerPage>3</opensearch:itemsPerPage>
+  <entry>
+    <article_title>
+      <en><![CDATA[Spatiotemporal patterns of population mobility in urban China during 2000- 2018]]></en>
+      <ja/>
+    </article_title>
+    <article_link>
+      <en>https://www.jstage.jst.go.jp/article/aiue/2020/1/2020_aiue2020052/_article</en>
+      <ja>https://www.jstage.jst.go.jp/article/aiue/2020/1/2020_aiue2020052/_article/-char/ja/</ja>
+    </article_link>
+    <author>
+      <en>
+        <name><![CDATA[Zhen Yang]]></name>
+        <name><![CDATA[Weijun Gao]]></name>
+      </en>
+      <ja/>
+    </author>
+    <cdjournal>aiue</cdjournal>
+    <material_title>
+      <en><![CDATA[Journal of Asian Urban Environment]]></en>
+      <ja><![CDATA[Journal of Asian Urban Environment]]></ja>
+    </material_title>
+    <prism:issn>2189-7972</prism:issn>
+    <prism:eIssn>2759-8578</prism:eIssn>
+    <prism:volume>2020</prism:volume>
+    <prism:number>1</prism:number>
+    <prism:startingPage>267</prism:startingPage>
+    <pubyear>2020</pubyear>
+    <prism:doi>10.69457/aiue.20200052</prism:doi>
+    <systemcode>1</systemcode>
+    <systemname>J-STAGE</systemname>
+    <title><![CDATA[Spatiotemporal patterns of population mobility in urban China during 2000- 2018]]></title>
+    <link href="https://www.jstage.jst.go.jp/article/aiue/2020/1/2020_aiue2020052/_article/-char/ja/"/>
+    <id>https://www.jstage.jst.go.jp/article/aiue/2020/1/2020_aiue2020052/_article/-char/ja/</id>
+    <updated>2026-03-31T09:00+09:00</updated>
+  </entry>
+  <entry>
+    <article_title>
+      <en><![CDATA[Modelling and Simulation of the Impulsive Load in the Emergent  Landing of an Urban Air Mobility for Designing a Safe Vertiport]]></en>
+      <ja><![CDATA[空飛ぶクルマの離着陸場設計のための緊急着陸時衝撃荷重シミュレーション]]></ja>
+    </article_title>
+    <article_link>
+      <en>https://www.jstage.jst.go.jp/article/jjsass/69/3/69_69_98/_article</en>
+      <ja>https://www.jstage.jst.go.jp/article/jjsass/69/3/69_69_98/_article/-char/ja/</ja>
+    </article_link>
+    <author>
+      <en>
+        <name><![CDATA[Yusuke Mihara]]></name>
+        <name><![CDATA[Masaru Nakano]]></name>
+      </en>
+      <ja>
+        <name><![CDATA[三原 裕介]]></name>
+        <name><![CDATA[中野 冠]]></name>
+      </ja>
+    </author>
+    <cdjournal>jjsass</cdjournal>
+    <material_title>
+      <en><![CDATA[JOURNAL OF THE JAPAN SOCIETY FOR AERONAUTICAL AND SPACE SCIENCES]]></en>
+      <ja><![CDATA[日本航空宇宙学会論文集]]></ja>
+    </material_title>
+    <prism:issn>1344-6460</prism:issn>
+    <prism:eIssn>2432-3691</prism:eIssn>
+    <prism:volume>69</prism:volume>
+    <prism:number>3</prism:number>
+    <prism:startingPage>98</prism:startingPage>
+    <prism:endingPage>104</prism:endingPage>
+    <pubyear>2021</pubyear>
+    <prism:doi>10.2322/jjsass.69.98</prism:doi>
+    <systemcode>1</systemcode>
+    <systemname>J-STAGE</systemname>
+    <title><![CDATA[空飛ぶクルマの離着陸場設計のための緊急着陸時衝撃荷重シミュレーション]]></title>
+    <link href="https://www.jstage.jst.go.jp/article/jjsass/69/3/69_69_98/_article/-char/ja/"/>
+    <id>https://www.jstage.jst.go.jp/article/jjsass/69/3/69_69_98/_article/-char/ja/</id>
+    <updated>2021-06-05T09:00+09:00</updated>
+  </entry>
+  <entry>
+    <article_title>
+      <en><![CDATA[THE POLICY OF URBAN SPATIAL REORGANIZATION IN FRANCE]]></en>
+      <ja><![CDATA[地方都市の賑わいをもたらした都市空間再編成の政策－フランスの事例－]]></ja>
+    </article_title>
+    <article_link>
+      <en>https://www.jstage.jst.go.jp/article/jscejipm/77/5/77_I_449/_article</en>
+      <ja>https://www.jstage.jst.go.jp/article/jscejipm/77/5/77_I_449/_article/-char/ja/</ja>
+    </article_link>
+    <author>
+      <en>
+        <name><![CDATA[Yumi VINCENT-FUJII]]></name>
+        <name><![CDATA[Yutaka HONDA]]></name>
+        <name><![CDATA[Dai NAKAGAMA]]></name>
+        <name><![CDATA[Yoichi KANAYAMA]]></name>
+        <name><![CDATA[Toshimichi MURAO]]></name>
+      </en>
+      <ja>
+        <name><![CDATA[ヴァンソン藤井 由実]]></name>
+        <name><![CDATA[本田 豊]]></name>
+        <name><![CDATA[中川 大]]></name>
+        <name><![CDATA[金山 洋一]]></name>
+        <name><![CDATA[村尾 俊道]]></name>
+      </ja>
+    </author>
+    <cdjournal>jscejipm</cdjournal>
+    <material_title>
+      <en><![CDATA[Journal of Japan Society of Civil Engineers, Ser. D3 (Infrastructure Planning and Management)]]></en>
+      <ja><![CDATA[土木学会論文集D3（土木計画学）]]></ja>
+    </material_title>
+    <prism:issn>         </prism:issn>
+    <prism:eIssn>2185-6540</prism:eIssn>
+    <prism:volume>77</prism:volume>
+    <prism:number>5</prism:number>
+    <prism:startingPage>I_449</prism:startingPage>
+    <prism:endingPage>I_467</prism:endingPage>
+    <pubyear>2022</pubyear>
+    <prism:doi>10.2208/jscejipm.77.5_I_449</prism:doi>
+    <systemcode>1</systemcode>
+    <systemname>J-STAGE</systemname>
+    <title><![CDATA[地方都市の賑わいをもたらした都市空間再編成の政策－フランスの事例－]]></title>
+    <link href="https://www.jstage.jst.go.jp/article/jscejipm/77/5/77_I_449/_article/-char/ja/"/>
+    <id>https://www.jstage.jst.go.jp/article/jscejipm/77/5/77_I_449/_article/-char/ja/</id>
+    <updated>2022-05-18T09:00+09:00</updated>
+  </entry>
+</feed>
