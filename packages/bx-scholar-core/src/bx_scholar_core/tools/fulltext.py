@@ -15,9 +15,10 @@ import json
 import re
 import socket
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urljoin, urlparse
 
+from bx_scholar_core.clients.core import fulltext_of, parse_work
 from bx_scholar_core.clients.europepmc import jats_to_sections
 from bx_scholar_core.config import Settings
 from bx_scholar_core.id_resolver import resolve_id
@@ -94,6 +95,47 @@ def _safe_pdf_dest(settings: Settings, requested: str) -> Path:
     return dest
 
 
+def _sections_response(
+    doc: dict[str, Any], wanted: list[str], max_chars: int, ids: dict[str, str]
+) -> str:
+    """The sections that fit in ``max_chars``, the headings of the rest."""
+    chosen = [
+        sec
+        for sec in doc["sections"]
+        if not wanted or any(w in sec["heading"].lower() for w in wanted)
+    ]
+    kept: list[dict[str, str]] = []
+    omitted: list[str] = []
+    truncated = ""
+    used = 0
+    for sec in chosen:
+        remaining = max_chars - used
+        if len(sec["text"]) <= remaining:
+            kept.append(sec)
+            used += len(sec["text"])
+        elif not kept and remaining > 0:
+            # Even the first section obeys the budget: cut it and say so
+            kept.append({**sec, "text": sec["text"][:remaining]})
+            truncated = sec["heading"]
+            used = max_chars
+        else:
+            omitted.append(sec["heading"])
+    return json.dumps(
+        {
+            "available": True,
+            **ids,
+            "title": doc["title"],
+            "abstract": doc["abstract"],
+            "headings": [sec["heading"] for sec in doc["sections"]],
+            "sections": kept,
+            "truncated_section": truncated,
+            "omitted_sections": omitted,
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+
+
 def register_fulltext_tools(mcp: object, pool: ClientPool) -> None:
     """Register full-text pipeline tools on the MCP server."""
     from mcp.server.fastmcp import FastMCP
@@ -101,12 +143,30 @@ def register_fulltext_tools(mcp: object, pool: ClientPool) -> None:
     server: FastMCP = mcp  # type: ignore[assignment]
     settings = pool.settings
 
+    async def _core_work(doi: str) -> tuple[dict[str, Any] | None, str]:
+        """CORE's record for ``doi`` and an error message (one of them empty)."""
+        try:
+            return await pool.core.by_doi(doi), ""
+        except Exception as exc:
+            return None, f"CORE request failed: {type(exc).__name__}: {exc}"
+
     @server.tool(structured_output=False)
     async def check_open_access(doi: str) -> str:
-        """Check if a paper has Open Access full-text available via Unpaywall.
+        """Check if a paper has Open Access full text. Asks Unpaywall first; when
+        Unpaywall has no PDF, CORE (repositories worldwide) is tried, and a copy
+        found there is reported with pdf_source="core".
         Returns OA status and PDF URL if available."""
-        client = pool.unpaywall
-        result = await client.check_oa(doi)
+        result = await pool.unpaywall.check_oa(doi)
+        if result.get("pdf_url"):
+            result["pdf_source"] = "unpaywall"
+            return json.dumps(result, ensure_ascii=False, indent=2)
+        work, error = await _core_work(doi.strip().replace("https://doi.org/", ""))
+        if work and work.get("downloadUrl"):
+            result["pdf_url"] = work["downloadUrl"]
+            result["pdf_source"] = "core"
+            result["core_landing_url"] = parse_work(work).landing_url
+        elif error:
+            result["core_error"] = error
         return json.dumps(result, ensure_ascii=False, indent=2)
 
     @server.tool(structured_output=False)
@@ -119,76 +179,75 @@ def register_fulltext_tools(mcp: object, pool: ClientPool) -> None:
         does not fit is listed in omitted_sections (or cut and named in
         truncated_section when it is the first one); the full list of headings is
         always returned so you can ask for the rest.
-        Source: Europe PMC open-access subset (mostly life and health sciences). When a
-        paper has no full text there, says so: use check_open_access + download_pdf +
-        extract_pdf_text instead."""
+        Sources: Europe PMC open-access subset (mostly life and health sciences), split
+        by section; then CORE (repositories of every field), as one "Full text" section
+        and only with CORE_API_KEY set. When neither has the text, says so and gives a
+        PDF URL when CORE has one: use download_pdf + extract_pdf_text on it."""
         resolved = resolve_id(identifier)
         if resolved.id_type not in ("pmcid", "doi", "pmid"):
             return json.dumps({"error": f"Use a DOI, PMCID or pmid:<n>, got: {identifier}"})
-        pmcid, doi = "", ""
+        pmcid, doi = "", resolved.value if resolved.id_type == "doi" else ""
+        errors: dict[str, str] = {}
+        xml = None
         try:
             if resolved.id_type == "pmcid":
                 pmcid = resolved.value
             else:
                 record = await pool.europepmc.lookup(resolved.id_type, resolved.value)
                 if record:
-                    pmcid, doi = record.pmcid, record.doi
+                    pmcid, doi = record.pmcid, record.doi or doi
             xml = await pool.europepmc.fulltext_xml(pmcid) if pmcid else None
         except ValueError as exc:
             return json.dumps({"error": str(exc)})
         except Exception as exc:
             # A blocked or failing source is an error, not "no full text"
-            return json.dumps({"error": f"Europe PMC request failed: {type(exc).__name__}: {exc}"})
-        if not xml:
-            return json.dumps(
-                {
-                    "available": False,
-                    "identifier": identifier,
-                    "pmcid": pmcid,
-                    "reason": "No open-access full text in Europe PMC for this paper.",
-                    "next_step": "check_open_access, then download_pdf + extract_pdf_text",
-                }
+            errors["europepmc"] = f"Europe PMC request failed: {type(exc).__name__}: {exc}"
+
+        wanted = [w.strip().lower() for w in sections.split(",") if w.strip()]
+        if xml:
+            doc = jats_to_sections(xml)
+            return _sections_response(
+                doc, wanted, max_chars, {"source": "europepmc", "pmcid": pmcid, "doi": doi}
             )
 
-        doc = jats_to_sections(xml)
-        wanted = [w.strip().lower() for w in sections.split(",") if w.strip()]
-        chosen = [
-            sec
-            for sec in doc["sections"]
-            if not wanted or any(w in sec["heading"].lower() for w in wanted)
-        ]
-        kept: list[dict[str, str]] = []
-        omitted: list[str] = []
-        truncated = ""
-        used = 0
-        for sec in chosen:
-            remaining = max_chars - used
-            if len(sec["text"]) <= remaining:
-                kept.append(sec)
-                used += len(sec["text"])
-            elif not kept and remaining > 0:
-                # Even the first section obeys the budget: cut it and say so
-                kept.append({**sec, "text": sec["text"][:remaining]})
-                truncated = sec["heading"]
-                used = max_chars
-            else:
-                omitted.append(sec["heading"])
-        return json.dumps(
-            {
-                "available": True,
-                "source": "europepmc",
-                "pmcid": pmcid,
-                "doi": doi,
-                "title": doc["title"],
-                "abstract": doc["abstract"],
-                "headings": [sec["heading"] for sec in doc["sections"]],
-                "sections": kept,
-                "truncated_section": truncated,
-                "omitted_sections": omitted,
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
+        work = None
+        if doi:
+            work, error = await _core_work(doi)
+            if error:
+                errors["core"] = error
+        text = fulltext_of(work) if work else ""
+        if work and text:
+            paper = parse_work(work)
+            doc = {
+                "title": paper.title,
+                "abstract": paper.abstract,
+                "sections": [{"heading": "Full text", "text": text}],
+            }
+            return _sections_response(
+                doc, [], max_chars,
+                {"source": "core", "doi": doi, "core_id": paper.external_ids.get("core", "")},
+            )  # fmt: skip
+
+        if errors and not work:
+            return json.dumps({"error": "; ".join(errors.values()), "identifier": identifier})
+        out: dict[str, Any] = {
+            "available": False,
+            "identifier": identifier,
+            "pmcid": pmcid,
+            "reason": "No open-access full text in Europe PMC or CORE for this paper.",
+            "next_step": "check_open_access, then download_pdf + extract_pdf_text",
+        }
+        if work and work.get("downloadUrl"):
+            out["pdf_url"] = work["downloadUrl"]
+            out["next_step"] = "download_pdf with pdf_url, then extract_pdf_text"
+            if not pool.core.api_key:
+                out["reason"] = (
+                    "No full text in Europe PMC. CORE has this paper; its extracted text "
+                    "needs CORE_API_KEY (free), and its PDF is in pdf_url."
+                )
+        if errors:
+            out["source_errors"] = errors
+        return json.dumps(out, ensure_ascii=False, indent=2)
 
     @server.tool(structured_output=False)
     async def download_pdf(url: str, save_path: str) -> str:

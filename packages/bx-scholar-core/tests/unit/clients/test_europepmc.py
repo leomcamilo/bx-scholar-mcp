@@ -190,6 +190,11 @@ class TestGetFulltextTool:
             RankingService(data_dir=tmp_path),
         )
         pool.europepmc._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        # CORE is the second full-text source; here it never has the paper
+        empty = {"totalHits": 0, "results": []}
+        pool.core._client = httpx.AsyncClient(
+            transport=httpx.MockTransport(lambda r: httpx.Response(200, json=empty))
+        )
         return server, pool
 
     async def _call(self, server, args) -> dict:

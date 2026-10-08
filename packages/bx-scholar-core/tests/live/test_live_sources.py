@@ -145,3 +145,12 @@ async def test_snowball_from_openalex_id(server_and_pool) -> None:
     await pool.aclose()
     assert r["seeds"] == ["10.1016/j.giq.2019.06.002"]
     assert r["stats"]["total_papers"] > 0
+
+
+async def test_core_lookup_by_doi_has_a_pdf(server_and_pool) -> None:
+    """Without a key CORE hides fullText but still gives the PDF it hosts."""
+    _, pool = server_and_pool
+    work = await pool.core.by_doi("10.1371/journal.pone.0185809")
+    await pool.aclose()
+    assert work is not None
+    assert work["downloadUrl"].startswith("https://core.ac.uk/download/")

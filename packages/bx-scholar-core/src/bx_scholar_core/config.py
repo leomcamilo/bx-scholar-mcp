@@ -65,6 +65,9 @@ class Settings(BaseSettings):
     # requests against a small daily budget shared by everyone on the same IP.
     openalex_api_key: str = ""
     opencitations_token: str = ""  # optional, free: https://opencitations.net/accesstoken
+    # Optional, free (https://core.ac.uk/services/api). Search works without it;
+    # CORE's extracted full text needs it.
+    core_api_key: str = ""
 
     # Paths. Relative values resolve against project_root, not cwd. The bare
     # names (DATA_DIR, ...) are kept as aliases for configs written before the

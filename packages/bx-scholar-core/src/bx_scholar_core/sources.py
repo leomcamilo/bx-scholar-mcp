@@ -115,6 +115,10 @@ async def _lareferencia(pool: ClientPool, q: SearchQuery) -> tuple[list[Paper], 
     return await pool.lareferencia.search(q.text, q.year_from, q.year_to, q.limit, q.formats)
 
 
+async def _core(pool: ClientPool, q: SearchQuery) -> tuple[list[Paper], int]:
+    return await pool.core.search(q.text, q.year_from, q.year_to, limit=q.limit)
+
+
 async def _tavily(pool: ClientPool, q: SearchQuery) -> tuple[list[Paper], int]:
     results = await pool.tavily.search(q.text, max_results=min(q.limit, 10))
     papers = [
@@ -143,6 +147,7 @@ SEARCH_SOURCES: dict[str, SearchSource] = {
         SearchSource("bdtd", _bdtd),
         SearchSource("oasisbr", _oasisbr),
         SearchSource("lareferencia", _lareferencia),
+        SearchSource("core", _core),
         SearchSource("tavily", _tavily, requires="tavily_api_key"),
     )
 }
