@@ -147,9 +147,7 @@ def register_fulltext_tools(
 
                 clen = resp.headers.get("content-length")
                 if clen and clen.isdigit() and int(clen) > MAX_PDF_BYTES:
-                    return json.dumps(
-                        {"error": f"PDF too large ({clen} bytes)", "url": current}
-                    )
+                    return json.dumps({"error": f"PDF too large ({clen} bytes)", "url": current})
 
                 content_type = resp.headers.get("content-type", "")
                 if "pdf" not in content_type and dest.suffix != ".pdf":

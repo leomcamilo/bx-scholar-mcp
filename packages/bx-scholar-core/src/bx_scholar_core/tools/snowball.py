@@ -107,8 +107,12 @@ async def snowball_bfs(
                 key = _paper_key(paper)
                 edge_type = "reference" if direction == "references" else "citation"
                 edges.append(
-                    {"from": src_doi, "to": paper.doi or paper.openalex_id,
-                     "type": edge_type, "level": depth}
+                    {
+                        "from": src_doi,
+                        "to": paper.doi or paper.openalex_id,
+                        "type": edge_type,
+                        "level": depth,
+                    }
                 )
                 if key in seen:
                     continue
@@ -123,8 +127,12 @@ async def snowball_bfs(
                 break
 
         level_stats.append(
-            {"level": depth, "expanded_nodes": len(expand),
-             "frontier_truncated": truncated_frontier, "new_papers": new_this_level}
+            {
+                "level": depth,
+                "expanded_nodes": len(expand),
+                "frontier_truncated": truncated_frontier,
+                "new_papers": new_this_level,
+            }
         )
         frontier = next_frontier
 
@@ -189,8 +197,13 @@ def register_snowball_tools(
                 return await client.get_citations(doi, direction=drc, per_page=PER_NODE_RESULTS)
 
             papers, edges, level_stats = await snowball_bfs(
-                fetch, seed_dois, directions, max_depth, max_papers,
-                min_cited_by, year_from,
+                fetch,
+                seed_dois,
+                directions,
+                max_depth,
+                max_papers,
+                min_cited_by,
+                year_from,
             )
             papers = deduplicate(papers)
             papers.sort(key=lambda p: p.cited_by_count, reverse=True)
@@ -246,7 +259,10 @@ def register_snowball_tools(
                 items = resp.json().get("message", {}).get("items", [])
                 for item in items:
                     title = (item.get("title") or [""])[0]
-                    if title and fuzz.partial_ratio(title.lower(), line.lower()) >= TITLE_MATCH_THRESHOLD:
+                    if (
+                        title
+                        and fuzz.partial_ratio(title.lower(), line.lower()) >= TITLE_MATCH_THRESHOLD
+                    ):
                         return line, _parse_item(item)
                 return line, None
             except Exception as exc:
