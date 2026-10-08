@@ -131,7 +131,7 @@ def _name_key(a: Author) -> str:
 
 def _same_record(a: Paper, b: Paper) -> bool:
     return (
-        fold(a.title) == fold(b.title)
+        fold(f"{a.title} {a.subtitle}") == fold(f"{b.title} {b.subtitle}")
         and a.year == b.year
         and bool(a.authors)
         # whole names, not surnames: John Smith and James Smith are not one record

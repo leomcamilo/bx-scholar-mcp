@@ -48,35 +48,55 @@ TitleMatch = Literal["full", "main", "fragment", "locate_only", "conflict", "unk
 
 
 # Presentation markup Crossref keeps in titles: H<sub>2</sub>O, <i>in vitro</i>.
-_MARKUP = re.compile(r"</?(?:sub|sup|i|b|em|strong|scp|sc|u|mml:[a-z]+|math)\b[^>]*>", re.I)
-# Symbols that change meaning (x > 0 vs x < 0) and stay as tokens.
-_MATH = (
-    "<>=+\u00b1\u00d7\u00f7\u2264\u2265\u2260\u2248\u221e%\u00b0"
-    # set, logic and calculus operators: x \u2208 A is not x \u2209 A
-    "\u2208\u2209\u220b\u220c\u2282\u2283\u2284\u2285\u2286\u2287\u222a\u2229\u2216"
-    "\u2200\u2203\u2204\u00ac\u2227\u2228\u2295\u2297\u2192\u2190\u2194\u21d2\u21d0\u21d4"
-    "\u2211\u220f\u222b\u2202\u2207\u221a\u221d\u223c\u2245\u2261\u2262\u226a\u226b\u22a5\u2225"
-)
-_CODE = re.compile(r"<code\b[^>]*>(.*?)</code>", re.I | re.S)
+# Only a complete element is markup; a lone "<b>" is text someone wrote.
+_TAG_NAMES = r"sub|sup|i|b|em|strong|scp|sc|u|math|mml:[a-z]+"
+_PAIRED = re.compile(rf"<({_TAG_NAMES})\b[^>]*>(.*?)</\1\s*>", re.I | re.S)
+_SELF_CLOSING = re.compile(rf"<(?:{_TAG_NAMES})\b[^>]*/>", re.I)
+_CODE = re.compile(r"<code\b[^>]*>(.*?)</code\s*>", re.I | re.S)
 _MAX_UNESCAPE = 10
+# Code spans travel through fold() between these private-use marks, so that
+# tokens() keeps their punctuation ("a.b", "</b>").
+CODE_OPEN, CODE_CLOSE = "\ue000", "\ue001"
+# Symbols that change meaning stay as tokens: every Unicode math symbol
+# (x > 0 vs x < 0, x \u2208 A vs x \u2209 A, A \u2288 B), plus %, \u00b0 and ^.
+_MATH = (
+    "".join(ch for ch in map(chr, range(0x110000)) if unicodedata.category(ch) == "Sm") + "%\u00b0^"
+)
+_TERM = (
+    r"[^\W_]+"
+    rf"|[{re.escape(_MATH)}]"
+    r"|(?<=\d)[.,](?=\d)"  # decimal separator: 0.5 is not 0 5
+    r"|(?<=\b\w)!"  # factorial after a single letter or digit: n!
+    # A minus is kept: U+2212 always ("x\u22121", "\u2212 10"); an ASCII hyphen as
+    # the sign of a number ("-10", "-.5", "at - 10", but not the range "2010 -
+    # 2020"). A hyphen inside a term ("COVID-19", "3-D") is not a sign.
+    r"|\u2212|(?<![\w\s])-(?=\.?\d)|(?<=^)-(?=\.?\d)|(?<=[^\d\s] )-(?= ?\.?\d)"
+)
+_CODE_TERM = r"[^\W_]+|[^\w\s]"
+
+
+def _plain_part(text: str, depth: int = 0) -> str:
+    parts = _CODE.split(text)
+    if len(parts) > 1:
+        # code is literal: decoded once, kept between marks
+        return "".join(
+            f"{CODE_OPEN}{html.unescape(p)}{CODE_CLOSE}" if i % 2 else _plain_part(p, depth)
+            for i, p in enumerate(parts)
+        )
+    stripped = _SELF_CLOSING.sub("", text)
+    while (nxt := _PAIRED.sub(r"\2", stripped)) != stripped:
+        stripped = nxt
+    nxt = html.unescape(stripped)
+    if nxt == text or depth >= _MAX_UNESCAPE:
+        return nxt
+    return _plain_part(nxt, depth + 1)
 
 
 def _plain(text: str) -> str:
     """Markup removed and entities decoded until nothing changes: sources
     escape entities several times ("&amp;amp;eacute;") and escape tags
-    ("&lt;b&gt;"). Inside <code> the content is literal: decoded once, kept."""
-    out = []
-    for i, part in enumerate(_CODE.split(text)):
-        if i % 2:  # the inside of a <code> element
-            out.append(html.unescape(part))
-            continue
-        for _ in range(_MAX_UNESCAPE):
-            nxt = html.unescape(_MARKUP.sub("", part))
-            if nxt == part:
-                break
-            part = nxt
-        out.append(part)
-    return "".join(out)
+    ("&lt;b&gt;", even a whole "&lt;code&gt;" element)."""
+    return _plain_part(text)
 
 
 def _is_latin_base(ch: str) -> bool:
@@ -104,17 +124,20 @@ def tokens(text: str) -> list[str]:
     """Ordered terms. Letter/digit runs stay whole ("h2o2", "il6", "c2h6o");
     spaceless scripts become one token per character."""
     out: list[str] = []
-    # A minus is kept: U+2212 always ("x\u22121", "\u2212 10"), an ASCII hyphen
-    # only as the sign of a number ("-10", "-.5"). A hyphen inside a term
-    # ("COVID-19", "3-D") is not a sign.
-    pattern = rf"[^\W_]+|[{re.escape(_MATH)}]|\u2212|(?<![\w])-(?=\.?\d)"
-    for run in re.findall(pattern, fold(text)):
-        if run == "\u2212":
-            run = "-"
-        if _UNSPACED.search(run):
-            out.extend(_split_unspaced(run))
-        else:
-            out.append(run)
+    for i, chunk in enumerate(re.split(f"[{CODE_OPEN}{CODE_CLOSE}]", fold(text))):
+        if i % 2:  # inside code: every punctuation mark counts
+            out.extend(re.findall(_CODE_TERM, chunk))
+            continue
+        # one space, as displayed: the sign rule looks at the character before
+        for run in re.findall(_TERM, re.sub(r"\s+", " ", chunk)):
+            if run in ("\u2212", "-"):
+                run = "-"
+            elif run == ",":
+                run = "."
+            if _UNSPACED.search(run):
+                out.extend(_split_unspaced(run))
+            else:
+                out.append(run)
     return out
 
 

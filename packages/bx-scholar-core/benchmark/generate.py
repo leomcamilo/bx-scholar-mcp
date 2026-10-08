@@ -95,27 +95,30 @@ def _content(words: list[str]) -> int:
     return n
 
 
-def _display(text: str) -> str:
+def _display(text: str, depth: int = 0) -> str:
     """What a reader sees: markup removed (MathML, <i>, <sub>), spaces collapsed.
-    Citations are written from this, never from the markup."""
-    # Crossref escapes entities several times ("&amp;amp;eacute;") and escapes
-    # tags ("&lt;b&gt;"); what is inside <code> is shown literally
-    out = []
-    for i, part in enumerate(re.split(r"<code\b[^>]*>(.*?)</code>", text, flags=re.I | re.S)):
-        if i % 2:
-            out.append(html.unescape(part))
-            continue
-        for _ in range(10):
-            nxt = html.unescape(_TAGS.sub("", part))
-            if nxt == part:
-                break
-            part = nxt
-        out.append(part)
-    return re.sub(r"\s+", " ", "".join(out)).strip()
+    Citations are written from this, never from the markup. Crossref escapes
+    entities several times ("&amp;amp;eacute;") and escapes tags ("&lt;b&gt;");
+    what is inside <code> is shown literally. A lone "<b>" is text."""
+    parts = re.split(r"<code\b[^>]*>(.*?)</code\s*>", text, flags=re.I | re.S)
+    if len(parts) > 1:
+        shown = "".join(
+            html.unescape(x) if i % 2 else _display(x, depth) for i, x in enumerate(parts)
+        )
+        return re.sub(r"\s+", " ", shown).strip()
+    part = _SELF_CLOSING.sub("", text)
+    while (nxt := _PAIRED.sub(r"\2", part)) != part:
+        part = nxt
+    nxt = html.unescape(part)
+    if nxt != text and depth < 10:
+        return _display(nxt, depth + 1)
+    return re.sub(r"\s+", " ", nxt).strip()
 
 
-# Only typesetting tags: "x < 0 and y > 0" is text, not markup.
-_TAGS = re.compile(r"</?(?:sub|sup|i|b|em|strong|scp|sc|u|mml:[a-z]+|math)\b[^>]*>", re.I)
+# Only complete typesetting elements: "x < 0 and y > 0" is text, not markup.
+_TAG_NAMES = r"sub|sup|i|b|em|strong|scp|sc|u|math|mml:[a-z]+"
+_PAIRED = re.compile(rf"<({_TAG_NAMES})\b[^>]*>(.*?)</\1\s*>", re.I | re.S)
+_SELF_CLOSING = re.compile(rf"<(?:{_TAG_NAMES})\b[^>]*/>", re.I)
 # A Crossref "person" that is really a collaboration: family "Consortium",
 # given "DEEP". Annotated as the organization "DEEP Consortium" only with
 # evidence: an acronym as given name, or the same name listed as an
@@ -129,11 +132,16 @@ def _is_collab(a: dict, org_names: set[str]) -> bool:
     if not _COLLAB.match((a.get("family") or "").strip()):
         return False
     given = a.get("given") or ""
-    return sum(c.isupper() for c in given) >= 2 or _whole(a) in org_names
+    acronym = len(given.split()) == 1 and sum(c.isupper() for c in given) >= 2  # "DEEP", "NOvA"
+    return acronym or _whole(a) in org_names
 
 
 def _documented(org: str) -> set[str]:
     return {re.sub(r"\W", "", x).casefold() for x in re.findall(r"\(([^)]*)\)", org)}
+
+
+def _latin_letter(ch: str) -> bool:
+    return ch.isascii() or "\u00c0" <= ch <= "\u024f"
 
 
 def _whole(a: dict) -> str:
@@ -401,8 +409,18 @@ def generate(works: list[Work]) -> list[Case]:
         if w.main_title and _content(_words(w.main_title)) >= 1:
             add("main_title", first, y, w.main_title, "auto", "verified")
         add("lowercase", first, y, full.lower(), "auto", "verified")
-        folded = "".join(
-            c for c in unicodedata.normalize("NFKD", full) if not unicodedata.combining(c)
+        # accents on Latin letters only: Cyrillic "й" is not "и" with an accent
+        folded = unicodedata.normalize(
+            "NFC",
+            "".join(
+                c
+                for i, c in enumerate(unicodedata.normalize("NFKD", full))
+                if not (
+                    unicodedata.combining(c)
+                    and i
+                    and _latin_letter(unicodedata.normalize("NFKD", full)[i - 1])
+                )
+            ),
         )
         if folded != full and not _CJK.search(full):
             add("accents_removed", first, y, folded, "auto", "verified")

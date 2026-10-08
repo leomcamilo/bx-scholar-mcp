@@ -112,11 +112,29 @@ def _transport(
     return httpx.MockTransport(handler)
 
 
+def _coherent(case: dict, result: dict) -> bool:
+    """A verified answer must carry the evidence for it: confirming checks and
+    a matched record whose year agrees with the citation."""
+    checks = result.get("checks") or {}
+    match = result.get("match") or {}
+    if checks.get("title_match") not in ("full", "main", "fragment"):
+        return False
+    if case["author"].strip() and checks.get("author_match") not in ("exact", "compatible"):
+        return False
+    if checks.get("year_match") not in ("exact", "off_by_one", "not_given"):
+        return False
+    if case["year"] is not None and abs((match.get("year") or -99) - case["year"]) > 1:
+        return False
+    return bool(match.get("title"))
+
+
 def classify(case: dict, result: dict, work_dois: set[str]) -> str | None:
     exp, got = case["expected_status"], result["status"]
     doi = (result.get("match") or {}).get("doi", "").lower()
     if result.get("verified") is not (got == "verified"):
         return "inconsistent"  # verified flag and status disagree: always an error
+    if got == "verified" and not _coherent(case, result):
+        return "inconsistent"  # a verified answer whose own evidence contradicts it
     if got == "verified" and (exp != "verified" or doi not in work_dois):
         return "false_positive"
     if exp == "verified" and got != "verified":

@@ -448,12 +448,13 @@ CYCLE3_AUTHORS = [
     ("Smith, John ???", [_a("John Smith", "Smith", "John")], "unknown"),
     ("Smith et al.; ???", [_a("John Smith", "Smith", "John")], "unknown"),
     ("12345", [_a("John Smith", "Smith", "John")], "unknown"),
-    ("CERN", [_org("European Organization for Nuclear Research (CERN)")], "compatible"),
+    ("CERN", [_org("European Organization for Nuclear Research (CERN)")], "unknown"),
     ("WHO", [_org("World Health Organization (W.H.O.)")], "compatible"),
     ("Bank, R.", [_a("Randolph Bank", "Bank", "Randolph")], "exact"),
     ("Team, V.", [_a("Victoria Team", "Team", "Victoria")], "exact"),
     ("Group, D.", [_a("David Group", "Group", "David")], "exact"),
-    ("Bank, R.", [_a("Randolph Bank")], "exact"),
+    ("Bank, R.", [_a("Randolph Bank")], "unknown"),
+    ("Bank, Randolph", [_a("Randolph Bank")], "exact"),
     ("Collaboration, A.", [_a("x", "Collaboration", "Atlas"), _org("ATLAS Collaboration")], "conflict"),
     ("European Organization for Nuclear Research", [_org("European Organization for Nuclear Research (CERN)")], "compatible"),
     ("University of California (IRVINE)", [_org("University of California (DAVIS)")], "conflict"),
@@ -496,3 +497,65 @@ def test_cycle3_unpadded_doi_keeps_the_right_candidate() -> None:
     )
     d = _decide("Smith, James", 2020, SMITH.title, ("crossref", SMITH), ("openalex", james))
     assert d.status == "verified" and d.best.paper.doi == "10.5555/series.1"
+
+
+# --- fourth Codex test cycle -------------------------------------------------
+
+CYCLE4_AUTHORS = [
+    ("Smith, John\U0001f916", [_a("John Smith", "Smith", "John")], "unknown"),
+    ("Smith, 12345", [_a("John Smith", "Smith", "John")], "unknown"),
+    ("Smith, John 12345", [_a("John Smith", "Smith", "John")], "unknown"),
+    ("Bank, W.", [_a("World Bank")], "unknown"),
+    ("World Bank", [_a("World Bank")], "exact"),
+    ("DAVIS", [_org("University of California (DAVIS)")], "unknown"),
+    ("WHO (WHO-2)", [_org("World Health Organization (WHO) (WHO-1)")], "conflict"),
+    ("John Paul Bank", [_a("x", "Bank", "John Paul")], "exact"),
+    ("Group, D. A.", [_a("x", "Group", "David Alan")], "exact"),
+    ("Asian Development Bank", [_org("Asian Development Bank")], "exact"),
+]  # fmt: skip
+
+
+@pytest.mark.parametrize(("cited", "records", "expected"), CYCLE4_AUTHORS)
+def test_cycle4_author(cited: str, records: list[Author], expected: str) -> None:
+    assert compare_authors(cited, records)[0] == expected
+
+
+def test_cycle4_unreadable_after_et_al_is_not_verified() -> None:
+    two = MERGEL.model_copy(
+        update={"authors": [_a("John Smith", "Smith", "John"), _a("Mary Jones", "Jones", "Mary")]}
+    )
+    author = "Smith et al.; Jones, Mary\U0001f916"
+    assert _decide(author, 2019, FULL, ("crossref", two)).status != "verified"
+
+
+def test_cycle4_parenthesized_romanization_is_the_name() -> None:
+    sato = [_a("x", "Sato", "Takayuki")]
+    assert compare_authors("(Takayuki Sato), 佐藤 孝幸", sato)[0] in ("exact", "compatible")
+
+
+@pytest.mark.parametrize(
+    ("given", "title", "expected"),
+    [
+        ("Cell viability at 10 °C", "Cell viability at - 10 °C", "conflict"),
+        ("Cell viability at - 10 °C", "Cell viability at \u2212 10 °C", "full"),
+        ("Cell viability at 0 5 °C", "Cell viability at 0.5 °C", "conflict"),
+        ("Convergence rate x2 in iterative systems", "Convergence rate x^2 in iterative systems", "conflict"),
+        ("Counting n in finite systems", "Counting n! in finite systems", "conflict"),
+        ("Help in finite systems", "Help! in finite systems", "full"),
+        ("Solutions with A B in finite systems", "Solutions with A \u2288 B in finite systems", "conflict"),
+        ("Escaping <b> tags in accessible documents", "Escaping <code>&lt;/b&gt;</code> tags in accessible documents", "conflict"),
+        ("Escaping <b> tags in accessible documents", "Escaping <code>&lt;b&gt;</code> tags in accessible documents", "full"),
+        ("Accessing a b in software systems", "Accessing <code>a.b</code> in software systems", "conflict"),
+        ("Escaping <i> tags in accessible documents", "Escaping &lt;code&gt;&amp;lt;b&amp;gt;&lt;/code&gt; tags in accessible documents", "conflict"),
+        ("Growth 2010 - 2020 in cities", "Growth 2010\u20132020 in cities", "full"),
+    ],
+)  # fmt: skip
+def test_cycle4_title(given: str, title: str, expected: str) -> None:
+    assert compare_title(given, title, mode="full").state == expected
+
+
+def test_cycle4_unpadded_doi_needs_the_same_full_title() -> None:
+    sub = SMITH.model_copy(update={"subtitle": "Northern cities"})
+    oa = SMITH.model_copy(update={"doi": "10.5555/series.1"})
+    d = _decide("Smith, John", 2020, SMITH.title, ("crossref", sub), ("openalex", oa))
+    assert d.status == "ambiguous"

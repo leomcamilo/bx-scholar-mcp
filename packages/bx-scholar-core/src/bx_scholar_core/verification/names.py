@@ -20,6 +20,7 @@ Rules (decisions 5-8 of the verification design):
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass
 from typing import Literal
 
@@ -57,16 +58,25 @@ _NAME_PUNCT = re.compile(r"[.,;&'()\-\u2010-\u2015]+")
 AuthorState = Literal["exact", "compatible", "conflict", "unknown"]
 
 
+def _strong_org(text: str) -> bool:
+    return bool(_ORG_WORDS.search(_WEAK_ORG.sub(" ", text)))
+
+
 def is_org_name(text: str) -> bool:
-    if _ORG_WORDS.search(_WEAK_ORG.sub(" ", text)):
+    if _strong_org(text):
         return True
     return bool(_WEAK_ORG.search(text)) and "," not in text and len(text.split()) > 2
 
 
 def _unreadable(name: str) -> bool:
-    """Something was written that is not a name: "???", "Smith, John ???", an
-    emoji, a bare number. Never dropped as if nothing had been written."""
+    """Something was written that is not a name: "???", "Smith, John🤖", a
+    bare number ("Smith, 12345"). Never dropped as if nothing had been written."""
     if _UNREADABLE.search(name):
+        return True
+    if any(unicodedata.category(ch)[0] in "SC" for ch in name if not ch.isspace()):
+        return True  # symbols, emoji, control or unassigned characters
+    words = [_NAME_PUNCT.sub("", t) for t in name.split()]
+    if any(w.isdigit() for w in words) and not is_org_name(name):
         return True
     return any(not re.search(r"\w", t) and not _NAME_PUNCT.fullmatch(t) for t in name.split())
 
@@ -223,16 +233,20 @@ def parse_cited(name: str) -> CitedAuthor:
     if _unreadable(name):
         return CitedAuthor(name, (), "")
     aliases = _aliases(name)
-    raw = re.sub(r"\([^)]*\)", " ", name).strip().strip(",;")
-    if not raw or raw.startswith(","):
+    raw = re.sub(r"\([^)]*\)", " ", name).strip()
+    if not raw.strip(",; ") or raw.startswith(","):
         # "(The NANOGrav Collaboration)", "(Takayuki Sato), 佐藤 孝幸": the
         # parenthesis is the name, not an aside
-        raw = re.sub(r"[()]", " ", name).strip().strip(",;")
+        raw = re.sub(r"[()]", " ", name).strip()
+    raw = raw.strip(",;").strip()
     literal, qualifier = _org_parts(name)
     if not raw:
         return CitedAuthor(name, (), "")
-    if is_org_name(raw):
+    if _strong_org(raw):
         return CitedAuthor(name, (), literal, "", aliases, literal, qualifier)
+    # "Asian Development Bank" is an organization; "John Paul Bank" may be a
+    # person: names with only weak organization words keep person readings too
+    organization = literal if is_org_name(raw) else ""
     toks = raw.split()
     acronym = ""
     if len(toks) == 1 and _ACRONYM.fullmatch(toks[0]) and 2 <= len(_alias_key(toks[0])) <= 6:
@@ -241,7 +255,7 @@ def parse_cited(name: str) -> CitedAuthor:
     readings = tuple(
         r for r in _person_readings(raw) if any(ch.isalpha() for w in r.surname for ch in w)
     )
-    return CitedAuthor(name, readings, "", acronym, aliases, literal, qualifier)
+    return CitedAuthor(name, readings, organization, acronym, aliases, literal, qualifier)
 
 
 def _person_readings(raw: str) -> tuple[PersonReading, ...]:
@@ -305,6 +319,9 @@ class RecordAuthor:
     structured: bool
     aliases: frozenset[str] = frozenset()
     qualifier: str = ""
+    # an unstructured name that may be a person or an organization ("World
+    # Bank", Randolph Bank): read both ways, initials alone prove nothing
+    either: bool = False
 
 
 def _alias_key(text: str) -> str:
@@ -330,13 +347,10 @@ def _parenthesized_aliases(text: str) -> list[str]:
 
 def _aliases(text: str) -> frozenset[str]:
     """Acronyms the name itself gives in parentheses, to look a bare acronym
-    up: "World Health Organization (WHO)", "(W.H.O.)", and also one that does
-    not abbreviate the current name ("European Organization for Nuclear
-    Research (CERN)")."""
-    found = _parenthesized_aliases(text) + [
-        x.strip() for x in re.findall(r"\(([^)]*)\)", text) if _ACRONYM.fullmatch(x.strip())
-    ]
-    return frozenset(_alias_key(x) for x in found)
+    up: "World Health Organization (WHO)", "(W.H.O.)". Only one that abbreviates
+    the name: "University of California (DAVIS)" names a campus, and nothing
+    tells it apart from an acronym like "(CERN)", so neither is an alias."""
+    return frozenset(_alias_key(x) for x in _parenthesized_aliases(text))
 
 
 def _org_parts(text: str) -> tuple[str, str]:
@@ -368,7 +382,8 @@ def _is_collaboration(a: Author, org_names: frozenset[str]) -> bool:
     if fold(a.family).strip() not in _COLLAB_FAMILY:
         return False
     whole = fold(f"{a.given} {a.family}").strip()
-    return sum(c.isupper() for c in a.given) >= 2 or whole in org_names
+    acronym = len(a.given.split()) == 1 and sum(c.isupper() for c in a.given) >= 2
+    return acronym or whole in org_names
 
 
 def record_author(a: Author, org_names: frozenset[str] = frozenset()) -> RecordAuthor:
@@ -386,6 +401,9 @@ def record_author(a: Author, org_names: frozenset[str] = frozenset()) -> RecordA
     if is_org_name(a.name):
         return _org_record(a.name, False)
     parsed = parse_cited(a.name)
+    if _WEAK_ORG.search(a.name):
+        base, qualifier = _org_parts(a.name)
+        return RecordAuthor(parsed.readings, base, False, _aliases(a.name), qualifier, True)
     # A display name read as a bare compound surname would hide its given names.
     readings = tuple(r for r in parsed.readings if r.given.parts) or parsed.readings
     return RecordAuthor(readings, parsed.organization, False)
@@ -439,14 +457,25 @@ def compare_person(cited: PersonReading, record: PersonReading) -> AuthorState:
     return s
 
 
+def _qualified(cited: CitedAuthor, record: RecordAuthor, match: AuthorState) -> AuthorState:
+    """Qualifiers decide when both sides have one ("(Berkeley)" vs "(Davis)");
+    one missing makes the match only partial."""
+    if cited.qualifier == record.qualifier:
+        return match
+    return "conflict" if cited.qualifier and record.qualifier else "compatible"
+
+
 def compare_author(cited: CitedAuthor, record: RecordAuthor) -> AuthorState:
+    if record.either:
+        if cited.literal and cited.literal == record.organization:
+            return _qualified(cited, record, "exact")
+        st = _compare_people(cited, record)
+        spelled = any(not ini for c in cited.readings for _, ini in c.given.parts)
+        return "unknown" if st in ("exact", "compatible") and not spelled else st
     if record.organization:
         if cited.literal and cited.literal == record.organization:
-            # "IBGE", "Petrobras": same name. Qualifiers decide when both have
-            # one ("(Berkeley)" vs "(Davis)"); one missing is only partial.
-            if cited.qualifier == record.qualifier:
-                return "exact"
-            return "conflict" if cited.qualifier and record.qualifier else "compatible"
+            # "IBGE", "Petrobras": same name
+            return _qualified(cited, record, "exact")
         if cited.organization:
             # Both names are spelled out: they decide. A shared alias does not
             # make "University of Cambridge (UC)" the University of Chicago.
@@ -454,10 +483,16 @@ def compare_author(cited: CitedAuthor, record: RecordAuthor) -> AuthorState:
         if cited.acronym:
             # A bare acronym only matches an alias the record itself documents;
             # initials are never taken as proof either way.
-            return "compatible" if cited.acronym in record.aliases else "unknown"
+            if cited.acronym not in record.aliases:
+                return "unknown"
+            return _qualified(cited, record, "compatible")
         return "conflict"
     if cited.organization and not cited.readings:
         return "conflict"
+    return _compare_people(cited, record)
+
+
+def _compare_people(cited: CitedAuthor, record: RecordAuthor) -> AuthorState:
     whole = fold(re.sub(r"[\s()]+", "", cited.raw))
     if _CJK_NAME.fullmatch(whole):
         # CJK names are often cited whole, family first, no space ("张芳蕾")
