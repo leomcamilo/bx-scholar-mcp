@@ -21,7 +21,7 @@ class SciELOClient(AsyncHTTPClient):
     """Client for SciELO via OpenAlex.
 
     Rate limit: 5 req/s.
-    All SciELO papers are Open Access.
+    Open-access status is taken from each record, not assumed.
     """
 
     base_url = ""
@@ -52,6 +52,7 @@ class SciELOClient(AsyncHTTPClient):
             params={
                 "search": query,
                 "filter": oa_filter,
+                "sort": "relevance_score:desc",
                 "per_page": min(max_results, 50),
                 "mailto": self._polite_email,
             },
@@ -61,7 +62,8 @@ class SciELOClient(AsyncHTTPClient):
         for work in resp.json().get("results", []):
             p = _parse_work(work)
             p.source_api = "scielo_via_openalex"
-            p.is_open_access = True
+            # Access status comes from the record (_parse_work), never assumed:
+            # telling the user a paper is open asserts they can read it.
             oa_url = (work.get("open_access") or {}).get("oa_url")
             if oa_url:
                 p.pdf_url = oa_url

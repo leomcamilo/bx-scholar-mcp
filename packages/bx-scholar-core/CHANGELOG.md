@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- `search_papers` and OpenAlex search sort by relevance by default (was citation count, which returned the most cited work vaguely matching the terms). Pass `sort="cited_by_count:desc"` to rank by impact. Ported from 1a561db (feat/http-service-and-hardening), which never reached main
+
 ### Added
+- `pt` source: Portuguese-language works from any venue (OpenAlex `language:pt`), now part of the `br` preset alongside SciELO Brasil
 - BDTD, OasisBR and LA Referencia sources (VuFind API): Brazilian and Latin American theses, dissertations and repository articles; `br` and `latam` presets now complete
 - `search_theses(query, scope="br"|"latam", degree="all"|"master"|"doctoral", ...)`, with institution, format and advisors per record
 - Europe PMC source (`sources="europepmc"`, also in the `bio` preset): PubMed, PMC and preprints, with PMID, PMCID, MeSH and OA flags
@@ -21,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Live smoke tests (`pytest -m live`, not run in CI)
 
 ### Fixed
+- SciELO results no longer claim open access for every record; the status comes from the record
 - SciELO search returned nothing: OpenAlex rejects the removed `host_venue` filter (400) and the direct fallback is blocked (403). Now filters SciELO Brasil by DOI prefix 10.1590
 - Semantic Scholar search turned errors (including 429) into an empty result
 - Tavily results were counted and then dropped; they now come back as `source_type: web`

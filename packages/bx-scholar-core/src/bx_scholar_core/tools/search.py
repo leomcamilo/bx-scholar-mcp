@@ -102,7 +102,7 @@ def register_search_tools(mcp: object, pool: ClientPool) -> None:
         year_from: int | None = None,
         year_to: int | None = None,
         journal_issn: str | None = None,
-        sort: str = "cited_by_count:desc",
+        sort: str = "relevance_score:desc",
         per_page: int = 25,
     ) -> str:
         names, unknown = expand_sources(sources)

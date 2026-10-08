@@ -197,7 +197,39 @@ class TestSciELO:
         assert "doi_starts_with:10.1590" in flt
         assert "host_venue" not in flt
         assert "publication_year:>2019" in flt
-        assert papers[0].is_open_access
+        assert parse_qs(urlparse(str(seen[0].url)).query)["sort"] == ["relevance_score:desc"]
+        # OA_WORK carries no open_access block: the paper is not claimed open
+        assert papers[0].is_open_access is False
+        await pool.aclose()
+
+    async def test_open_access_comes_from_record(self) -> None:
+        pool = ClientPool(Settings(polite_email="ci@bxscholar.dev"))
+        work = {**OA_WORK, "open_access": {"is_oa": True, "oa_url": "https://x/y.pdf"}}
+        _mock(pool.scielo, lambda r: httpx.Response(200, json={"results": [work]}))
+        papers = await pool.scielo.search("x")
+        assert papers[0].is_open_access is True
+        assert papers[0].pdf_url == "https://x/y.pdf"
+        await pool.aclose()
+
+
+class TestRelevanceAndPortuguese:
+    async def test_search_papers_defaults_to_relevance(self, tmp_path) -> None:
+        server, pool = _server(tmp_path)
+        seen = _mock(pool.openalex, lambda r: httpx.Response(200, json={"results": []}))
+        await _call(server, "search_papers", {"query": "x", "sources": "openalex"})
+        assert parse_qs(urlparse(str(seen[0].url)).query)["sort"] == ["relevance_score:desc"]
+        await pool.aclose()
+
+    async def test_pt_source_filters_language(self, tmp_path) -> None:
+        server, pool = _server(tmp_path)
+        seen = _mock(
+            pool.openalex, lambda r: httpx.Response(200, json={"results": [OA_WORK], "meta": {}})
+        )
+        r = await _call(server, "search_papers", {"query": "x", "sources": "pt", "year_from": 2020})
+        flt = parse_qs(urlparse(str(seen[0].url)).query)["filter"][0]
+        assert "language:pt" in flt
+        assert "publication_year:>2019" in flt
+        assert r["results"][0]["source_api"] == "openalex_pt"
         await pool.aclose()
 
     async def test_error_propagates(self) -> None:
