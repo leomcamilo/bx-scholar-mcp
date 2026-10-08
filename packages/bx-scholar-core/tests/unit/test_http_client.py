@@ -154,3 +154,47 @@ class TestAsyncHTTPClient:
         client = StubClient()
         await client.close()  # no-op, no client created
         await client.close()  # still no-op
+
+
+class TestQuotaExhausted:
+    async def test_long_retry_after_fails_at_once(self) -> None:
+        """OpenAlex answers an exhausted daily budget with 429 and Retry-After of
+        hours; the client must not sleep and retry for minutes inside a tool call."""
+        import time
+
+        from bx_scholar_core.clients.base import QuotaExhaustedError
+
+        calls = 0
+
+        def handler(req: httpx.Request) -> httpx.Response:
+            nonlocal calls
+            calls += 1
+            return httpx.Response(429, headers={"Retry-After": "20364"}, json={"error": "budget"})
+
+        client = StubClient()
+        client._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        t0 = time.monotonic()
+        with pytest.raises(QuotaExhaustedError, match=r"resets in 5\.7 h"):
+            await client.get("/x")
+        assert time.monotonic() - t0 < 1
+        assert calls == 1
+        await client.close()
+
+
+class TestOpenAlexApiKey:
+    async def test_key_sent_only_when_configured(self) -> None:
+        from bx_scholar_core.clients.openalex import OpenAlexClient
+
+        seen: list[httpx.Request] = []
+
+        def handler(req: httpx.Request) -> httpx.Response:
+            seen.append(req)
+            return httpx.Response(200, json={"results": [], "meta": {"count": 0}})
+
+        for key in ("", "k123"):
+            client = OpenAlexClient("ci@bxscholar.dev", api_key=key)
+            client._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+            await client.search("x")
+            await client.close()
+        assert "api_key" not in seen[0].url.params
+        assert seen[1].url.params["api_key"] == "k123"

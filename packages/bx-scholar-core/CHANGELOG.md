@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Optional `OPENALEX_API_KEY` (free). Without a key, OpenAlex now enforces a daily budget shared by everyone on the same IP
+
+### Fixed
+- A 429 with a long `Retry-After` (OpenAlex sends hours when the daily budget is gone) raised after ~3 minutes of sleeps and retries; it now fails at once with `QuotaExhaustedError` saying when the quota resets
+
 ### Changed
 - `search_papers` and OpenAlex search sort by relevance by default (was citation count, which returned the most cited work vaguely matching the terms). Pass `sort="cited_by_count:desc"` to rank by impact. Ported from 1a561db (feat/http-service-and-hardening), which never reached main
 

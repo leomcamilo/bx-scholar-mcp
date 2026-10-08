@@ -98,13 +98,19 @@ class OpenAlexClient(AsyncHTTPClient):
     rate_limit = 10.0
     max_rate_period = 1.0
 
-    def __init__(self, polite_email: str, user_agent: str = "", **kwargs) -> None:
+    def __init__(
+        self, polite_email: str, user_agent: str = "", api_key: str = "", **kwargs
+    ) -> None:
         ua = user_agent or f"BX-Scholar/0.1.0 (mailto:{polite_email})"
         super().__init__(user_agent=ua, **kwargs)
         self._polite_email = polite_email
+        self._api_key = api_key
 
     def _default_params(self) -> dict[str, str]:
-        return {"mailto": self._polite_email}
+        params = {"mailto": self._polite_email}
+        if self._api_key:
+            params["api_key"] = self._api_key
+        return params
 
     async def search(
         self,
@@ -191,7 +197,7 @@ class OpenAlexClient(AsyncHTTPClient):
                         params={
                             "per_page": min(per_page, 50),
                             "sort": "cited_by_count:desc",
-                            "mailto": self._polite_email,
+                            **self._default_params(),
                         },
                         cache_policy=("citations", 86400),
                     )
