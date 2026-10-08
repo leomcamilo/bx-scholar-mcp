@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
-from bx_scholar_core.config import Settings, load_settings
+from bx_scholar_core.config import Settings, find_project_root, load_settings
 
 
 class TestSettings:
@@ -87,3 +89,59 @@ class TestLoadSettings:
         s = load_settings(polite_email="leo@baxijen.ai", log_level="DEBUG")
         assert s.polite_email == "leo@baxijen.ai"
         assert s.log_level == "DEBUG"
+
+
+class TestPathResolution:
+    def test_root_found_from_package_subdir_via_dotenv(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.delenv("BX_SCHOLAR_HOME", raising=False)
+        (tmp_path / ".env").write_text("POLITE_EMAIL=jane.doe@mit.edu\n")
+        pkg = tmp_path / "packages" / "bx-scholar-core"
+        pkg.mkdir(parents=True)
+        assert find_project_root(pkg) == tmp_path.resolve()
+
+    def test_root_found_via_uv_workspace(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.delenv("BX_SCHOLAR_HOME", raising=False)
+        (tmp_path / "pyproject.toml").write_text("[tool.uv.workspace]\nmembers = []\n")
+        pkg = tmp_path / "packages" / "x"
+        pkg.mkdir(parents=True)
+        assert find_project_root(pkg) == tmp_path.resolve()
+
+    def test_bx_scholar_home_wins(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setenv("BX_SCHOLAR_HOME", str(tmp_path))
+        assert find_project_root(Path("/")) == tmp_path.resolve()
+
+    def test_load_settings_reads_root_env_and_data_from_subdir(self, tmp_path, monkeypatch) -> None:
+        """The README flow: `uv run --directory packages/bx-scholar-core`."""
+        for var in ("BX_SCHOLAR_HOME", "POLITE_EMAIL", "BX_SCHOLAR_DATA_DIR", "DATA_DIR"):
+            monkeypatch.delenv(var, raising=False)
+        (tmp_path / ".env").write_text("POLITE_EMAIL=jane.doe@mit.edu\n")
+        pkg = tmp_path / "packages" / "bx-scholar-core"
+        pkg.mkdir(parents=True)
+        monkeypatch.chdir(pkg)
+
+        s = load_settings()
+        assert s.polite_email == "jane.doe@mit.edu"
+        assert s.data_dir == (tmp_path / "data").resolve()
+
+    def test_relative_data_dir_resolves_against_root(self, tmp_path) -> None:
+        s = Settings(polite_email="leo@baxijen.ai", project_root=tmp_path, data_dir="rankings")
+        assert s.data_dir == (tmp_path / "rankings").resolve()
+
+    def test_absolute_data_dir_kept(self, tmp_path) -> None:
+        s = Settings(polite_email="leo@baxijen.ai", project_root=Path("/nope"), data_dir=tmp_path)
+        assert s.data_dir == tmp_path
+
+    @pytest.mark.parametrize("var", ["BX_SCHOLAR_DATA_DIR", "DATA_DIR"])
+    def test_data_dir_env_names(self, var, tmp_path, monkeypatch) -> None:
+        monkeypatch.delenv("BX_SCHOLAR_DATA_DIR", raising=False)
+        monkeypatch.delenv("DATA_DIR", raising=False)
+        monkeypatch.setenv(var, str(tmp_path))
+        s = Settings(polite_email="leo@baxijen.ai")
+        assert s.data_dir == tmp_path
+
+    def test_prefixed_cache_env_vars(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setenv("BX_SCHOLAR_CACHE_DIR", str(tmp_path))
+        monkeypatch.setenv("BX_SCHOLAR_CACHE_ENABLED", "false")
+        s = Settings(polite_email="leo@baxijen.ai")
+        assert s.cache_dir == tmp_path
+        assert s.cache_enabled is False
