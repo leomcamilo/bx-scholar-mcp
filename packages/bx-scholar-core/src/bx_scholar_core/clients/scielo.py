@@ -28,10 +28,13 @@ class SciELOClient(AsyncHTTPClient):
     rate_limit = 5.0
     max_rate_period = 1.0
 
-    def __init__(self, polite_email: str, user_agent: str = "", **kwargs) -> None:
+    def __init__(
+        self, polite_email: str, user_agent: str = "", api_key: str = "", **kwargs
+    ) -> None:
         ua = user_agent or f"BX-Scholar/0.1.0 (mailto:{polite_email})"
         super().__init__(user_agent=ua, **kwargs)
         self._polite_email = polite_email
+        self._api_key = api_key
 
     async def search(
         self,
@@ -55,6 +58,7 @@ class SciELOClient(AsyncHTTPClient):
                 "sort": "relevance_score:desc",
                 "per_page": min(max_results, 50),
                 "mailto": self._polite_email,
+                **({"api_key": self._api_key} if self._api_key else {}),
             },
             cache_policy=("search_results", 3600),
         )

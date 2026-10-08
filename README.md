@@ -99,6 +99,7 @@ claude mcp add bx-scholar-core -- uv run --directory /path/to/packages/bx-schola
 | `POLITE_EMAIL` | **Yes** | Email for polite API pools (OpenAlex, CrossRef, Unpaywall) |
 | `TAVILY_API_KEY` | No | [Tavily](https://tavily.com) web search |
 | `S2_API_KEY` | No | [Semantic Scholar](https://www.semanticscholar.org/product/api#api-key-form) — higher rate limits |
+| `OPENALEX_API_KEY` | No | [OpenAlex](https://openalex.org/settings/api) (free) — without it, OpenAlex limits requests by a daily budget shared per IP |
 | `BX_SCHOLAR_HOME` | No | Directory holding `.env` and `data/`. Default: the repo root, found by walking up from the working directory |
 | `BX_SCHOLAR_DATA_DIR` | No | Ranking data directory. Relative paths resolve against `BX_SCHOLAR_HOME` (default: `data/`) |
 

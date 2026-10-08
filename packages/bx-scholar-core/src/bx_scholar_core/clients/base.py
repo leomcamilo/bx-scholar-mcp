@@ -39,6 +39,27 @@ class NonRetryableHTTPError(Exception):
         super().__init__(message or f"HTTP {status_code}")
 
 
+class QuotaExhaustedError(NonRetryableHTTPError):
+    """429 whose Retry-After is too long to wait inside a tool call (e.g. a daily
+    budget that resets hours later). Raised at once instead of sleeping."""
+
+    def __init__(self, url: str, retry_after: float) -> None:
+        hours = retry_after / 3600
+        super().__init__(429, f"Rate limit/quota exhausted for {url}; resets in {hours:.1f} h")
+        self.retry_after = retry_after
+
+
+# Longest Retry-After worth sleeping through inside a single tool call.
+MAX_RETRY_WAIT = 30.0
+
+
+def _retry_after_seconds(value: str | None) -> float | None:
+    try:
+        return float(value) if value else None
+    except ValueError:
+        return None
+
+
 def _is_retryable(exc: BaseException) -> bool:
     return isinstance(exc, (RetryableHTTPError, httpx.ConnectTimeout, httpx.ReadTimeout))
 
@@ -133,14 +154,13 @@ class AsyncHTTPClient:
 
                 if resp.status_code == 429:
                     retry_after = resp.headers.get("Retry-After")
-                    msg = f"Rate limited (429). Retry-After: {retry_after}"
+                    wait = _retry_after_seconds(retry_after)
                     logger.warning("rate_limited", url=full_url, retry_after=retry_after)
-                    if retry_after:
-                        try:  # noqa: SIM105
-                            await asyncio.sleep(min(float(retry_after), 60))
-                        except ValueError:
-                            pass
-                    raise RetryableHTTPError(429, msg)
+                    if wait is not None and wait > MAX_RETRY_WAIT:
+                        raise QuotaExhaustedError(full_url, wait)
+                    if wait:
+                        await asyncio.sleep(wait)
+                    raise RetryableHTTPError(429, f"Rate limited (429). Retry-After: {retry_after}")
 
                 if resp.status_code >= 500:
                     msg = f"Server error ({resp.status_code})"
@@ -198,12 +218,11 @@ class AsyncHTTPClient:
                 resp = await client.post(full_url, json=json, headers=merged_headers)
 
                 if resp.status_code == 429:
-                    retry_after = resp.headers.get("Retry-After")
-                    if retry_after:
-                        try:  # noqa: SIM105
-                            await asyncio.sleep(min(float(retry_after), 60))
-                        except ValueError:
-                            pass
+                    wait = _retry_after_seconds(resp.headers.get("Retry-After"))
+                    if wait is not None and wait > MAX_RETRY_WAIT:
+                        raise QuotaExhaustedError(full_url, wait)
+                    if wait:
+                        await asyncio.sleep(wait)
                     raise RetryableHTTPError(429)
                 if resp.status_code >= 500:
                     raise RetryableHTTPError(resp.status_code)

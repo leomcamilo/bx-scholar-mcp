@@ -59,6 +59,7 @@ uvx --from "git+https://github.com/leomcamilo/bx-scholar-mcp#subdirectory=packag
 | `POLITE_EMAIL` | **Yes** | Email for polite API pools (OpenAlex, CrossRef, Unpaywall) |
 | `TAVILY_API_KEY` | No | Tavily web search API key |
 | `S2_API_KEY` | No | Semantic Scholar API key (5 req/s vs 1 req/s) |
+| `OPENALEX_API_KEY` | No | OpenAlex API key (free); without it requests count against a daily budget shared per IP |
 | `BX_SCHOLAR_HOME` | No | Directory holding `.env` and `data/` (default: repo root, found by walking up from cwd) |
 | `BX_SCHOLAR_DATA_DIR` | No | Directory for ranking data files, relative to `BX_SCHOLAR_HOME` (default: `data/`) |
 | `BX_SCHOLAR_CACHE_ENABLED` | No | Enable DuckDB cache (default: `true`) |

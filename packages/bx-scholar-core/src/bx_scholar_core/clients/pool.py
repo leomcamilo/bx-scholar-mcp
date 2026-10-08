@@ -46,7 +46,9 @@ class ClientPool:
     @cached_property
     def openalex(self) -> OpenAlexClient:
         s = self.settings
-        return self._track(OpenAlexClient(s.polite_email, s.user_agent, cache=self.cache))
+        return self._track(
+            OpenAlexClient(s.polite_email, s.user_agent, s.openalex_api_key, cache=self.cache)
+        )
 
     @cached_property
     def crossref(self) -> CrossRefClient:
@@ -60,7 +62,9 @@ class ClientPool:
     @cached_property
     def scielo(self) -> SciELOClient:
         s = self.settings
-        return self._track(SciELOClient(s.polite_email, s.user_agent, cache=self.cache))
+        return self._track(
+            SciELOClient(s.polite_email, s.user_agent, s.openalex_api_key, cache=self.cache)
+        )
 
     @cached_property
     def semantic_scholar(self) -> SemanticScholarClient:
