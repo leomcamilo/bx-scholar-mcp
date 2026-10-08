@@ -27,6 +27,9 @@ class SearchQuery:
     limit: int = 25
     journal_issn: str | None = None
     sort: str = "cited_by_count:desc"
+    # Document formats (VuFind values, e.g. "doctoralThesis"); honored by the
+    # repository sources, ignored by the others.
+    formats: tuple[str, ...] = ()
 
 
 SearchFn = Callable[["ClientPool", SearchQuery], Awaitable[tuple[list[Paper], int]]]
@@ -79,6 +82,18 @@ async def _europepmc(pool: ClientPool, q: SearchQuery) -> tuple[list[Paper], int
     return await pool.europepmc.search(q.text, q.year_from, q.year_to, limit=q.limit)
 
 
+async def _bdtd(pool: ClientPool, q: SearchQuery) -> tuple[list[Paper], int]:
+    return await pool.bdtd.search(q.text, q.year_from, q.year_to, q.limit, q.formats)
+
+
+async def _oasisbr(pool: ClientPool, q: SearchQuery) -> tuple[list[Paper], int]:
+    return await pool.oasisbr.search(q.text, q.year_from, q.year_to, q.limit, q.formats)
+
+
+async def _lareferencia(pool: ClientPool, q: SearchQuery) -> tuple[list[Paper], int]:
+    return await pool.lareferencia.search(q.text, q.year_from, q.year_to, q.limit, q.formats)
+
+
 async def _tavily(pool: ClientPool, q: SearchQuery) -> tuple[list[Paper], int]:
     results = await pool.tavily.search(q.text, max_results=min(q.limit, 10))
     papers = [
@@ -103,6 +118,9 @@ SEARCH_SOURCES: dict[str, SearchSource] = {
         SearchSource("scielo", _scielo),
         SearchSource("semantic_scholar", _semantic_scholar),
         SearchSource("europepmc", _europepmc),
+        SearchSource("bdtd", _bdtd),
+        SearchSource("oasisbr", _oasisbr),
+        SearchSource("lareferencia", _lareferencia),
         SearchSource("tavily", _tavily, requires="tavily_api_key"),
     )
 }

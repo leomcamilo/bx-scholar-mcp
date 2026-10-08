@@ -54,6 +54,7 @@ class TestToolRegistration:
             "snowball",
             "resolve_reference_list",
             "get_fulltext",
+            "search_theses",
         }
         assert expected.issubset(tool_names), f"Missing tools: {expected - tool_names}"
 
@@ -64,4 +65,4 @@ class TestToolRegistration:
 
         register_all_tools(server, settings, ranking_service)
         tools = server._tool_manager.list_tools()
-        assert len(tools) == 22  # current expected count
+        assert len(tools) == 23  # current expected count

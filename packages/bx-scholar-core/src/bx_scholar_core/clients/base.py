@@ -87,7 +87,7 @@ class AsyncHTTPClient:
     async def get(
         self,
         url: str,
-        params: dict[str, Any] | None = None,
+        params: dict[str, Any] | list[tuple[str, Any]] | None = None,
         headers: dict[str, str] | None = None,
         *,
         cache_policy: tuple[str, int] | None = None,
