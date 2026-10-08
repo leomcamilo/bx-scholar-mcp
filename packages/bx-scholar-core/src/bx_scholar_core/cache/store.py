@@ -18,8 +18,12 @@ from bx_scholar_core.logging import get_logger
 logger = get_logger(__name__)
 
 
-def make_cache_key(url: str, params: dict[str, Any] | None = None) -> str:
-    """Generate a deterministic cache key from URL + sorted params."""
+def make_cache_key(url: str, params: dict[str, Any] | list[Any] | None = None) -> str:
+    """Generate a deterministic cache key from URL + sorted params.
+
+    A list of (key, value) pairs (repeated query keys) keeps its order, which is
+    part of the request.
+    """
     normalized = json.dumps(params or {}, sort_keys=True, default=str)
     raw = f"{url}:{normalized}"
     return hashlib.sha256(raw.encode()).hexdigest()

@@ -6,6 +6,7 @@ import asyncio
 import json
 from typing import TYPE_CHECKING
 
+from bx_scholar_core.clients.vufind import THESIS_FORMATS
 from bx_scholar_core.dedup import deduplicate
 from bx_scholar_core.logging import get_logger
 from bx_scholar_core.models.paper import Paper
@@ -15,6 +16,13 @@ if TYPE_CHECKING:
     from bx_scholar_core.clients.pool import ClientPool
 
 logger = get_logger(__name__)
+
+THESIS_SCOPES = {"br": ("bdtd",), "latam": ("bdtd", "lareferencia")}
+THESIS_DEGREES = {
+    "all": THESIS_FORMATS,
+    "master": ("masterThesis",),
+    "doctoral": ("doctoralThesis",),
+}
 
 
 def _papers_to_json(papers: list[Paper], total: int = 0, meta: dict | None = None) -> str:
@@ -108,6 +116,37 @@ def register_search_tools(mcp: object, pool: ClientPool) -> None:
         if unknown:
             meta["unknown_sources"] = unknown
         return _papers_to_json(papers, total=total, meta=meta)
+
+    @server.tool(structured_output=False)
+    async def search_theses(
+        query: str,
+        scope: str = "br",
+        degree: str = "all",
+        year_from: int | None = None,
+        year_to: int | None = None,
+        per_page: int = 25,
+    ) -> str:
+        """Search master's and doctoral theses (teses e dissertações), which OpenAlex
+        barely covers for Latin America.
+        scope: 'br' = BDTD (Brazil, IBICT); 'latam' = BDTD + LA Referencia (Latin America).
+        degree: 'all', 'master' or 'doctoral'.
+        Each result carries institution, format and, when the portal has them, the
+        advisors (external_ids.advisors). Records rarely have a DOI: cite via landing_url."""
+        sources = THESIS_SCOPES.get(scope)
+        formats = THESIS_DEGREES.get(degree)
+        if sources is None or formats is None:
+            return json.dumps(
+                {
+                    "error": "scope must be one of "
+                    f"{sorted(THESIS_SCOPES)} and degree one of {sorted(THESIS_DEGREES)}"
+                }
+            )
+        papers, total, meta = await run_search(
+            pool,
+            list(sources),
+            SearchQuery(query, year_from, year_to, per_page, formats=formats),
+        )
+        return _papers_to_json(papers, total=total, meta={"scope": scope, "degree": degree, **meta})
 
     @server.tool(structured_output=False)
     async def search_journal_papers(

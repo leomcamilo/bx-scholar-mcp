@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- BDTD, OasisBR and LA Referencia sources (VuFind API): Brazilian and Latin American theses, dissertations and repository articles; `br` and `latam` presets now complete
+- `search_theses(query, scope="br"|"latam", degree="all"|"master"|"doctoral", ...)`, with institution, format and advisors per record
 - Europe PMC source (`sources="europepmc"`, also in the `bio` preset): PubMed, PMC and preprints, with PMID, PMCID, MeSH and OA flags
 - `get_fulltext(identifier, sections, max_chars)`: open-access full text split by section, from Europe PMC JATS XML, without downloading a PDF
 - `get_paper` accepts PMID (`pmid:31398324`, PubMed URL) and PMCID (`PMC6789012`, PMC URL)

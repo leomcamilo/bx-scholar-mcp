@@ -19,7 +19,12 @@ from bx_scholar_core.tools.registry import register_all_tools
 
 pytestmark = pytest.mark.live
 
-QUERIES = {"scielo": "mobilidade urbana"}  # default: "smart city mobility"
+QUERIES = {  # default: "smart city mobility"
+    "scielo": "mobilidade urbana",
+    "bdtd": "mobilidade urbana",
+    "oasisbr": "mobilidade urbana",
+    "lareferencia": "movilidad urbana",
+}
 
 
 @pytest.fixture
@@ -89,3 +94,24 @@ async def test_get_paper_by_pmcid_and_pmid(server_and_pool) -> None:
     await pool.aclose()
     assert results[0]["paper"]["doi"] == "10.3389/fnins.2024.1279668"
     assert results[1]["paper"]["pmid"] == "31398324"
+
+
+async def test_search_theses_latam_doctoral(server_and_pool) -> None:
+    server, pool = server_and_pool
+    out = await server.call_tool(
+        "search_theses",
+        {
+            "query": "mobilidade urbana",
+            "scope": "latam",
+            "degree": "doctoral",
+            "year_from": 2018,
+            "per_page": 5,
+        },
+    )
+    blocks = out[0] if isinstance(out, tuple) else out
+    r = json.loads(blocks[0].text)
+    await pool.aclose()
+    assert "errors" not in r, r.get("errors")
+    assert set(r["per_source"]) == {"bdtd", "lareferencia"}
+    assert all(p["external_ids"]["format"] == "doctoralThesis" for p in r["results"])
+    assert all(p["year"] >= 2018 for p in r["results"] if p.get("year"))

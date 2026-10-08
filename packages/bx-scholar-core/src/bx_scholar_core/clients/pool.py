@@ -23,6 +23,7 @@ from bx_scholar_core.clients.scielo import SciELOClient
 from bx_scholar_core.clients.semantic_scholar import SemanticScholarClient
 from bx_scholar_core.clients.tavily import TavilyClient
 from bx_scholar_core.clients.unpaywall import UnpaywallClient
+from bx_scholar_core.clients.vufind import BDTDClient, LAReferenciaClient, OasisBRClient
 
 if TYPE_CHECKING:
     from bx_scholar_core.cache import CacheStore
@@ -79,6 +80,19 @@ class ClientPool:
     @cached_property
     def europepmc(self) -> EuropePMCClient:
         return self._track(EuropePMCClient(user_agent=self.settings.user_agent, cache=self.cache))
+
+    @cached_property
+    def bdtd(self) -> BDTDClient:
+        return self._track(BDTDClient(user_agent=self.settings.user_agent, cache=self.cache))
+
+    @cached_property
+    def oasisbr(self) -> OasisBRClient:
+        return self._track(OasisBRClient(user_agent=self.settings.user_agent, cache=self.cache))
+
+    @cached_property
+    def lareferencia(self) -> LAReferenciaClient:
+        ua = self.settings.user_agent
+        return self._track(LAReferenciaClient(user_agent=ua, cache=self.cache))
 
     async def aclose(self) -> None:
         for client in self._created:

@@ -13,15 +13,11 @@ from typing import Any
 from defusedxml import ElementTree as ET
 
 from bx_scholar_core.clients.base import AsyncHTTPClient, NonRetryableHTTPError
+from bx_scholar_core.languages import to_iso639_1
 from bx_scholar_core.models.paper import Author, Paper, SourceType
 
 EUROPEPMC_BASE = "https://www.ebi.ac.uk/europepmc/webservices/rest"
 
-# Europe PMC reports ISO 639-2 (3-letter); Paper.language is ISO 639-1.
-_LANG = {
-    "eng": "en", "por": "pt", "spa": "es", "fre": "fr", "ger": "de", "ita": "it",
-    "chi": "zh", "jpn": "ja", "kor": "ko", "rus": "ru", "dut": "nl", "pol": "pl",
-}  # fmt: skip
 _TAG = re.compile(r"<[^>]+>")
 
 
@@ -85,7 +81,7 @@ def parse_record(record: dict[str, Any]) -> Paper:
         pmid=record.get("pmid", ""),
         pmcid=record.get("pmcid", ""),
         mesh=_mesh(record),
-        language=_LANG.get(record.get("language", ""), record.get("language", "")),
+        language=to_iso639_1(record.get("language", "")),
         is_open_access=_yes(record.get("isOpenAccess")),
         pdf_url=_pdf_url(record),
         landing_url=f"https://europepmc.org/article/{source}/{rid}" if source and rid else "",
