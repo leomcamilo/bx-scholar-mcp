@@ -41,7 +41,7 @@ uvx --from "git+https://github.com/leomcamilo/bx-scholar-mcp#subdirectory=packag
 | | `get_keyword_trends` | Keyword frequency over time |
 | **Rankings** | `rank_journal` | SJR + Qualis CAPES + JQL lookup with fuzzy matching |
 | | `top_journals_for_field` | Top-ranked journals for a research field |
-| **Verification** | `verify_citation` | Anti-hallucination: verify citation exists |
+| **Verification** | `verify_citation` | Anti-hallucination: accepts a hit only if title, first author and year (±1) all match |
 | | `check_retraction` | Check if paper has been retracted |
 | | `batch_verify_references` | Batch verify up to 30 references |
 | **Citations** | `get_influential_citations` | Citations that substantially engage with a paper |
