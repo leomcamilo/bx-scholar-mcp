@@ -18,12 +18,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urljoin, urlparse
 
-from bx_scholar_core.clients.unpaywall import UnpaywallClient
 from bx_scholar_core.config import Settings
 from bx_scholar_core.logging import get_logger
 
 if TYPE_CHECKING:
-    from bx_scholar_core.cache import CacheStore
+    from bx_scholar_core.clients.pool import ClientPool
 
 logger = get_logger(__name__)
 
@@ -93,24 +92,20 @@ def _safe_pdf_dest(settings: Settings, requested: str) -> Path:
     return dest
 
 
-def register_fulltext_tools(
-    mcp: object, settings: Settings, cache: CacheStore | None = None
-) -> None:
+def register_fulltext_tools(mcp: object, pool: ClientPool) -> None:
     """Register full-text pipeline tools on the MCP server."""
     from mcp.server.fastmcp import FastMCP
 
     server: FastMCP = mcp  # type: ignore[assignment]
+    settings = pool.settings
 
     @server.tool(structured_output=False)
     async def check_open_access(doi: str) -> str:
         """Check if a paper has Open Access full-text available via Unpaywall.
         Returns OA status and PDF URL if available."""
-        client = UnpaywallClient(settings.polite_email, settings.user_agent, cache=cache)
-        try:
-            result = await client.check_oa(doi)
-            return json.dumps(result, ensure_ascii=False, indent=2)
-        finally:
-            await client.close()
+        client = pool.unpaywall
+        result = await client.check_oa(doi)
+        return json.dumps(result, ensure_ascii=False, indent=2)
 
     @server.tool(structured_output=False)
     async def download_pdf(url: str, save_path: str) -> str:

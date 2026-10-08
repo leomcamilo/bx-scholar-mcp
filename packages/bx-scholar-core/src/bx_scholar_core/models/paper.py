@@ -62,6 +62,16 @@ class Paper(BaseModel):
     openalex_id: str = ""
     s2_id: str = ""
     arxiv_id: str = ""
+    pmid: str = ""
+    pmcid: str = ""
+    # Source-specific ids without a dedicated field (CORE, Lens, KCI, CiNii, handle...)
+    external_ids: dict[str, str] = Field(default_factory=dict)
+
+    # Biomedical subject headings (MeSH descriptor names), from PubMed via OpenAlex
+    # or Europe PMC
+    mesh: list[str] = Field(default_factory=list)
+    language: str = ""  # ISO 639-1 when the source provides it
+    landing_url: str = ""  # record page for sources without DOI (theses, repositories)
 
     # Open Access
     is_open_access: bool = False

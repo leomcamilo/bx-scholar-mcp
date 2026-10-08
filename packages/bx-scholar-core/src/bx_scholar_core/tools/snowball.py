@@ -18,7 +18,6 @@ from typing import TYPE_CHECKING
 
 from rapidfuzz import fuzz
 
-from bx_scholar_core.config import Settings
 from bx_scholar_core.dedup import deduplicate
 from bx_scholar_core.id_resolver import resolve_id
 from bx_scholar_core.logging import get_logger
@@ -26,7 +25,7 @@ from bx_scholar_core.logging import get_logger
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
-    from bx_scholar_core.cache import CacheStore
+    from bx_scholar_core.clients.pool import ClientPool
     from bx_scholar_core.models.paper import Paper
 
 logger = get_logger(__name__)
@@ -139,13 +138,11 @@ async def snowball_bfs(
     return collected, edges, level_stats
 
 
-def register_snowball_tools(
-    mcp: object, settings: Settings, cache: CacheStore | None = None
-) -> None:
+def register_snowball_tools(mcp: object, pool: ClientPool) -> None:
     """Register snowballing tools on the MCP server."""
     from mcp.server.fastmcp import FastMCP
 
-    from bx_scholar_core.clients.crossref import CrossRefClient, _parse_item
+    from bx_scholar_core.clients.crossref import _parse_item
     from bx_scholar_core.clients.openalex import OpenAlexClient
 
     server: FastMCP = mcp  # type: ignore[assignment]
@@ -180,7 +177,7 @@ def register_snowball_tools(
         max_papers = max(1, min(max_papers, 500))
         directions = ["references", "citing"] if direction == "both" else [direction]
 
-        client = OpenAlexClient(settings.polite_email, settings.user_agent, cache=cache)
+        client = pool.openalex
         try:
             raw_seeds = [s.strip() for s in seed_identifiers.split(",") if s.strip()][:5]
             seed_dois: list[str] = []
@@ -246,8 +243,8 @@ def register_snowball_tools(
         if not lines:
             return json.dumps({"error": "no usable reference lines found (min 25 chars each)"})
 
-        crossref = CrossRefClient(settings.polite_email, cache=cache)
-        openalex = OpenAlexClient(settings.polite_email, settings.user_agent, cache=cache)
+        crossref = pool.crossref
+        openalex = pool.openalex
 
         async def resolve_line(line: str) -> tuple[str, Paper | None]:
             try:

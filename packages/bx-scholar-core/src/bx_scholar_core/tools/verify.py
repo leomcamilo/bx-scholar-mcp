@@ -8,11 +8,10 @@ from typing import TYPE_CHECKING, Any
 from bx_scholar_core.citation_match import MAX_YEAR_DELTA, CitationMatch, best_match
 from bx_scholar_core.clients.crossref import CrossRefClient
 from bx_scholar_core.clients.openalex import OpenAlexClient
-from bx_scholar_core.config import Settings
 from bx_scholar_core.logging import get_logger
 
 if TYPE_CHECKING:
-    from bx_scholar_core.cache import CacheStore
+    from bx_scholar_core.clients.pool import ClientPool
 
 logger = get_logger(__name__)
 
@@ -83,7 +82,7 @@ async def _verify_one(
     }
 
 
-def register_verify_tools(mcp: object, settings: Settings, cache: CacheStore | None = None) -> None:
+def register_verify_tools(mcp: object, pool: ClientPool) -> None:
     """Register citation verification tools on the MCP server."""
     from mcp.server.fastmcp import FastMCP
 
@@ -100,25 +99,18 @@ def register_verify_tools(mcp: object, settings: Settings, cache: CacheStore | N
         title fragment, the cited author and the year (±1) all agree with it.
         Returns verified status, confidence, per-field checks and the match; when
         unverified, the closest candidate and why it was rejected."""
-        cr = CrossRefClient(settings.polite_email, settings.user_agent, cache=cache)
-        oa = OpenAlexClient(settings.polite_email, settings.user_agent, cache=cache)
-        try:
-            result = await _verify_one(cr, oa, author, year, title_fragment)
-        finally:
-            await cr.close()
-            await oa.close()
+        cr = pool.crossref
+        oa = pool.openalex
+        result = await _verify_one(cr, oa, author, year, title_fragment)
         return json.dumps(result, ensure_ascii=False, indent=2)
 
     @server.tool(structured_output=False)
     async def check_retraction(doi: str) -> str:
         """Check if a paper has been retracted. Always verify before citing."""
         doi = doi.strip().replace("https://doi.org/", "")
-        cr = CrossRefClient(settings.polite_email, settings.user_agent, cache=cache)
-        try:
-            status = await cr.check_retraction(doi)
-            return json.dumps(status.model_dump(), ensure_ascii=False, indent=2)
-        finally:
-            await cr.close()
+        cr = pool.crossref
+        status = await cr.check_retraction(doi)
+        return json.dumps(status.model_dump(), ensure_ascii=False, indent=2)
 
     @server.tool(structured_output=False)
     async def batch_verify_references(references_json: str) -> str:
@@ -132,38 +124,34 @@ def register_verify_tools(mcp: object, settings: Settings, cache: CacheStore | N
                 {"error": "Invalid JSON. Expected array of {author, year, title} objects."}
             )
 
-        cr = CrossRefClient(settings.polite_email, settings.user_agent, cache=cache)
-        oa = OpenAlexClient(settings.polite_email, settings.user_agent, cache=cache)
+        cr = pool.crossref
+        oa = pool.openalex
         results = []
 
-        try:
-            for ref in refs[:30]:
-                year = ref.get("year")
-                try:
-                    year = int(year) if year else None
-                except (TypeError, ValueError):
-                    year = None
-                r = await _verify_one(
-                    cr, oa, str(ref.get("author", "")), year, str(ref.get("title", ""))
-                )
-                m = r.get("match") or (r.get("closest_match") or {}).get("match") or {}
-                entry = {
-                    "query": ref,
-                    "verified": r["verified"],
-                    "confidence": r["confidence"],
-                    "source": r.get("source", ""),
-                    "doi": m.get("doi", "") if r["verified"] else "",
-                    "matched_title": m.get("title", ""),
-                }
-                if r["verified"]:
-                    entry["checks"] = r["checks"]
-                elif "closest_match" in r:
-                    entry["checks"] = r["closest_match"]["checks"]
-                    entry["rejected_because"] = r["closest_match"]["rejected_because"]
-                results.append(entry)
-        finally:
-            await cr.close()
-            await oa.close()
+        for ref in refs[:30]:
+            year = ref.get("year")
+            try:
+                year = int(year) if year else None
+            except (TypeError, ValueError):
+                year = None
+            r = await _verify_one(
+                cr, oa, str(ref.get("author", "")), year, str(ref.get("title", ""))
+            )
+            m = r.get("match") or (r.get("closest_match") or {}).get("match") or {}
+            entry = {
+                "query": ref,
+                "verified": r["verified"],
+                "confidence": r["confidence"],
+                "source": r.get("source", ""),
+                "doi": m.get("doi", "") if r["verified"] else "",
+                "matched_title": m.get("title", ""),
+            }
+            if r["verified"]:
+                entry["checks"] = r["checks"]
+            elif "closest_match" in r:
+                entry["checks"] = r["closest_match"]["checks"]
+                entry["rejected_because"] = r["closest_match"]["rejected_because"]
+            results.append(entry)
 
         verified_count = sum(1 for r in results if r.get("verified"))
         return json.dumps(

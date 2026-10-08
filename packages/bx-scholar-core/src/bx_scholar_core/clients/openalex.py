@@ -29,6 +29,7 @@ def _parse_work(work: dict[str, Any]) -> Paper:
     """Parse an OpenAlex work dict into a canonical Paper model."""
     source = (work.get("primary_location") or {}).get("source") or {}
     doi_raw = work.get("doi") or ""
+    ids = work.get("ids") or {}
 
     authors = [
         Author(
@@ -70,7 +71,21 @@ def _parse_work(work: dict[str, Any]) -> Paper:
         references=[
             r.replace("https://openalex.org/", "") for r in (work.get("referenced_works") or [])
         ],
+        pmid=_strip_id(ids.get("pmid"), "https://pubmed.ncbi.nlm.nih.gov/"),
+        pmcid=_strip_id(ids.get("pmcid"), "https://www.ncbi.nlm.nih.gov/pmc/articles/"),
+        mesh=_mesh_names(work.get("mesh") or []),
+        language=work.get("language") or "",
     )
+
+
+def _strip_id(value: str | None, prefix: str) -> str:
+    return (value or "").replace(prefix, "").strip("/")
+
+
+def _mesh_names(mesh: list[dict[str, Any]]) -> list[str]:
+    """Unique descriptor names, major topics first (OpenAlex repeats one per qualifier)."""
+    ordered = sorted(mesh, key=lambda m: not m.get("is_major_topic"))
+    return list(dict.fromkeys(m["descriptor_name"] for m in ordered if m.get("descriptor_name")))
 
 
 class OpenAlexClient(AsyncHTTPClient):

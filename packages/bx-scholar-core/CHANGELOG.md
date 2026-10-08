@@ -5,6 +5,22 @@ All notable changes to `bx-scholar-core` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- `ClientPool`: one instance per API client per server, so per-source rate limits hold across tool calls
+- `search_papers` reports failing sources in `errors`, sources missing an API key in `skipped`, and unrecognized names in `unknown_sources`
+- `search_papers` presets: `br`, `latam`, `asia`, `bio`, `oa` (sources not implemented yet are ignored)
+- `Paper.pmid`, `pmcid`, `mesh`, `language`, `landing_url`, `external_ids`; OpenAlex results now carry PMID, PMCID and MeSH
+- Live smoke tests (`pytest -m live`, not run in CI)
+
+### Fixed
+- SciELO search returned nothing: OpenAlex rejects the removed `host_venue` filter (400) and the direct fallback is blocked (403). Now filters SciELO Brasil by DOI prefix 10.1590
+- Semantic Scholar search turned errors (including 429) into an empty result
+- Tavily results were counted and then dropped; they now come back as `source_type: web`
+- `resolve_reference_list` never closed its HTTP clients
+- Deduplication also matches records by PMID
+
 ## [0.1.0] - 2026-04-24
 
 ### Added

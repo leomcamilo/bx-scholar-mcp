@@ -1,20 +1,24 @@
-"""SciELO client — Brazilian/LATAM Open Access papers.
+"""SciELO client — Brazilian/LATAM Open Access papers, via OpenAlex.
 
-Uses OpenAlex with SciELO publisher filter as primary strategy,
-with direct SciELO search API as fallback.
+OpenAlex has no usable "hosted on SciELO" filter (``host_venue`` was removed
+and returns 400; SciELO's own repository sources hold almost no works), so
+SciELO Brasil is selected by its DOI prefix, 10.1590. search.scielo.org
+blocks API clients (403), hence no direct fallback. Other national
+collections (Chile 10.4067, etc.) are not covered yet.
 """
 
 from __future__ import annotations
 
-from bx_scholar_core.clients.base import AsyncHTTPClient, NonRetryableHTTPError
+from bx_scholar_core.clients.base import AsyncHTTPClient
 from bx_scholar_core.clients.openalex import _parse_work
-from bx_scholar_core.models.paper import Author, Paper
+from bx_scholar_core.models.paper import Paper
 
-SCIELO_SEARCH = "https://search.scielo.org/"
+OPENALEX_WORKS = "https://api.openalex.org/works"
+SCIELO_BRASIL_DOI_PREFIX = "10.1590"
 
 
 class SciELOClient(AsyncHTTPClient):
-    """Client for SciELO via OpenAlex filter.
+    """Client for SciELO via OpenAlex.
 
     Rate limit: 5 req/s.
     All SciELO papers are Open Access.
@@ -36,78 +40,30 @@ class SciELOClient(AsyncHTTPClient):
         year_to: int | None = None,
         max_results: int = 20,
     ) -> list[Paper]:
-        """Search SciELO papers via OpenAlex SciELO filter."""
-        oa_filter = "host_venue.publisher:SciELO"
+        """Search SciELO Brasil papers. HTTP errors propagate to the caller."""
+        oa_filter = f"doi_starts_with:{SCIELO_BRASIL_DOI_PREFIX}"
         if year_from:
             oa_filter += f",publication_year:>{year_from - 1}"
         if year_to:
             oa_filter += f",publication_year:<{year_to + 1}"
 
-        try:
-            resp = await self.get(
-                "https://api.openalex.org/works",
-                params={
-                    "search": query,
-                    "filter": oa_filter,
-                    "per_page": min(max_results, 50),
-                    "mailto": self._polite_email,
-                },
-                cache_policy=("search_results", 3600),
-            )
-            data = resp.json()
-            papers: list[Paper] = []
-            for work in data.get("results", []):
-                p = _parse_work(work)
-                p.source_api = "scielo_via_openalex"
-                p.is_open_access = True
-                oa_url = (work.get("open_access") or {}).get("oa_url")
-                if oa_url:
-                    p.pdf_url = oa_url
-                papers.append(p)
-            return papers
-        except (NonRetryableHTTPError, Exception):
-            return await self._search_direct(query, max_results)
-
-    async def _search_direct(self, query: str, max_results: int) -> list[Paper]:
-        """Fallback: search SciELO directly."""
-        try:
-            resp = await self.get(
-                SCIELO_SEARCH,
-                params={"q": query, "output": "json", "count": min(max_results, 50), "lang": "en"},
-                cache_policy=("search_results", 3600),
-            )
-            if "application/json" not in resp.headers.get("content-type", ""):
-                return []
-
-            data = resp.json()
-            papers: list[Paper] = []
-            for doc in (data.get("docs") or data.get("results") or [])[:max_results]:
-                title = (
-                    doc.get("title", [""])[0]
-                    if isinstance(doc.get("title"), list)
-                    else doc.get("title", "")
-                )
-                year_raw = (
-                    doc.get("year_cluster", [""])[0]
-                    if isinstance(doc.get("year_cluster"), list)
-                    else doc.get("year_cluster", "")
-                )
-                papers.append(
-                    Paper(
-                        title=title,
-                        doi=doc.get("doi", ""),
-                        year=int(year_raw) if year_raw and str(year_raw).isdigit() else None,
-                        authors=[Author(name=n) for n in (doc.get("au") or [])[:10]],
-                        journal=(
-                            doc.get("journal_title", [""])[0]
-                            if isinstance(doc.get("journal_title"), list)
-                            else doc.get("journal_title", "")
-                        ),
-                        source_type="peer_reviewed",
-                        source_api="scielo_direct",
-                        is_open_access=True,
-                    )
-                )
-            return papers
-        except Exception:
-            return []
+        resp = await self.get(
+            OPENALEX_WORKS,
+            params={
+                "search": query,
+                "filter": oa_filter,
+                "per_page": min(max_results, 50),
+                "mailto": self._polite_email,
+            },
+            cache_policy=("search_results", 3600),
+        )
+        papers: list[Paper] = []
+        for work in resp.json().get("results", []):
+            p = _parse_work(work)
+            p.source_api = "scielo_via_openalex"
+            p.is_open_access = True
+            oa_url = (work.get("open_access") or {}).get("oa_url")
+            if oa_url:
+                p.pdf_url = oa_url
+            papers.append(p)
+        return papers

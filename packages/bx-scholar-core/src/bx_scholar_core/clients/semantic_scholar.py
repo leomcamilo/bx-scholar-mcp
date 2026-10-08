@@ -92,15 +92,12 @@ class SemanticScholarClient(AsyncHTTPClient):
         if fields_of_study:
             params["fieldsOfStudy"] = fields_of_study
 
-        try:
-            resp = await self.get(
-                "/paper/search", params=params, cache_policy=("search_results", 3600)
-            )
-            data = resp.json()
-            papers = [_parse_s2_paper(p) for p in data.get("data", [])]
-            return papers, data.get("total", 0)
-        except (NonRetryableHTTPError, Exception):
-            return [], 0
+        # Errors propagate: search_papers reports them per source, and an
+        # unkeyed S2 often answers 429, which must not look like "no results".
+        resp = await self.get("/paper/search", params=params, cache_policy=("search_results", 3600))
+        data = resp.json()
+        papers = [_parse_s2_paper(p) for p in data.get("data", [])]
+        return papers, data.get("total", 0)
 
     async def get_influential_citations(
         self, doi_or_s2id: str, limit: int = 20
