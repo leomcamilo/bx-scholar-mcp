@@ -41,6 +41,10 @@ _ORG_WORDS = re.compile(
 
 AuthorState = Literal["exact", "compatible", "conflict", "unknown"]
 
+# Vancouver/NLM writes every given name as an initial: "Arruda ARDS" for Ana
+# Rita dos Santos Arruda.
+MAX_GROUPED_INITIALS = 6
+
 
 def _letters(text: str) -> str:
     return re.sub(r"[^\w]|_|\d", "", fold(text))
@@ -75,7 +79,12 @@ def parse_given(text: str, caps_as_initials: bool = True) -> Given:
             # "J.", "J.D.", "J.-D.", "M-J", "J"
             parts.extend((c, True) for c in fold(raw) if c.isalpha())
             continue
-        if caps_as_initials and raw.isupper() and 2 <= len(raw) <= 3 and raw.isalpha():
+        if (
+            caps_as_initials
+            and raw.isupper()
+            and 2 <= len(raw) <= MAX_GROUPED_INITIALS
+            and raw.isalpha()
+        ):
             # Vancouver initials "JD" (only reached for the given-name slot)
             parts.extend((c, True) for c in fold(raw))
             continue
@@ -124,7 +133,7 @@ def _is_initials_token(tok: str, caps: bool = False) -> bool:
     are expected: after the surname)."""
     return bool(
         re.fullmatch(r"(?:\w\.)+\w?\.?|\w(?:-\w)+\.?|\w\.?", tok)
-        or (caps and tok.isupper() and tok.isalpha() and len(tok) <= 3)
+        or (caps and tok.isupper() and tok.isalpha() and len(tok) <= MAX_GROUPED_INITIALS)
     )
 
 
@@ -152,12 +161,20 @@ def parse_cited(name: str) -> CitedAuthor:
         acronym = fold(tok) if tok.isupper() and tok.isalpha() and 2 <= len(tok) <= 6 else ""
         reading = PersonReading(tuple(_surname_key(tok)), Given((), ""))
         return CitedAuthor(name, (reading,), "", acronym, aliases)
-    # Vancouver "Smith JD", "Smith J D", "Silva LC": surname first, initials after
-    if not _is_initials_token(toks[0]) and all(_is_initials_token(t, caps=True) for t in toks[1:]):
+    # Vancouver "Smith JD", "Silva LC", "De Almeida Marcarini E": the surname
+    # (one or more words) comes first, then a block of initials
+    # Undotted capitals read as initials only when the surname shows its case:
+    # in "MARIANA MEDEIROS PRATES MAIA" every word is capitalized and none is
+    # an initial.
+    caps_ok = any(not t.isupper() for t in toks)
+    k = len(toks)
+    while k > 1 and _is_initials_token(toks[k - 1], caps=caps_ok):
+        k -= 1
+    if 0 < k < len(toks) and not any(_is_initials_token(t) for t in toks[:k]):
         readings.append(
-            PersonReading(tuple(_surname_key(toks[0])), parse_given(" ".join(toks[1:])))
+            PersonReading(tuple(_surname_key(" ".join(toks[:k]))), parse_given(" ".join(toks[k:])))
         )
-        if len(toks) == 2 and toks[1].isupper() and toks[1].isalpha():
+        if k == 1 and len(toks) == 2 and toks[1].isupper() and toks[1].isalpha():
             # "Wei LI": the capitalized word may be the surname instead
             readings.append(
                 PersonReading(
@@ -297,26 +314,48 @@ def compare_author(cited: CitedAuthor, record: RecordAuthor) -> AuthorState:
     return "conflict" if states else "unknown"
 
 
-def split_cited_authors(author: str) -> list[str]:
-    """ "Silva, L.; Souza, A." -> two names; "Mergel et al." -> one; an
-    organization name is not split at "and"/"e"."""
+def split_cited_authors(author: str) -> list[list[str]]:
+    """Possible splits of the cited author string into names.
+
+    "Silva, L.; Souza, A." -> [["Silva, L.", "Souza, A."]]; "Mergel et al." ->
+    [["Mergel"]]. " e " / " y " may join two authors ("Silva e Souza") or belong
+    to a compound surname ("Da Silva e Silva"), so both splits are returned; an
+    organization name is never split.
+    """
     text = re.split(r"\bet\.? al\.?", author, maxsplit=1, flags=re.I)[0].strip().strip(",")
     if not text:
         return []
+
+    def clean(parts: list[str]) -> list[str]:
+        return [p.strip().strip(",") for p in parts if p.strip().strip(",")]
+
     if ";" in text:
-        return [p.strip() for p in text.split(";") if p.strip()]
+        return [clean(text.split(";"))]
     if _ORG_WORDS.search(text):
-        return [text]
-    parts = re.split(r"\s*&\s*|\s+and\s+|\s+e\s+|\s+y\s+", text)
-    return [p.strip().strip(",") for p in parts if p.strip().strip(",")]
+        return [[text]]
+    strict = clean(re.split(r"\s*&\s*|\s+and\s+", text))
+    loose = clean([q for p in strict for q in re.split(r"\s+e\s+|\s+y\s+", p)])
+    return [strict, loose] if loose != strict else [strict]
 
 
 def compare_authors(
     cited_text: str, record_authors: list[Author], truncated: bool = False
 ) -> tuple[AuthorState, str]:
-    """Match every cited author to a distinct record author (decision 8)."""
-    cited = [parse_cited(n) for n in split_cited_authors(cited_text)]
-    cited = [c for c in cited if c.readings or c.organization]
+    """Match every cited author to a distinct record author (decision 8). When
+    the string splits in more than one way, the best-supported split counts."""
+    splits = split_cited_authors(cited_text)
+    if not splits:
+        return "unknown", "no author given"
+    order = {"exact": 0, "compatible": 1, "unknown": 2, "conflict": 3}
+    results = [_compare_split(names, record_authors, truncated) for names in splits]
+    return min(results, key=lambda r: order[r[0]])
+
+
+def _compare_split(
+    names: list[str], record_authors: list[Author], truncated: bool
+) -> tuple[AuthorState, str]:
+    cited = [parse_cited(n) for n in names]
+    cited = [c for c in cited if c.readings or c.organization or c.acronym]
     if not cited:
         return "unknown", "no author given"
     records = [record_author(a) for a in record_authors if a.name.strip() or a.family]
