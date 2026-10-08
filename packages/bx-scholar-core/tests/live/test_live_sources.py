@@ -63,3 +63,29 @@ async def test_openalex_exposes_pmid_and_mesh(server_and_pool) -> None:
     assert paper is not None
     assert paper.pmid == "31398324"
     assert paper.mesh
+
+
+async def test_get_fulltext_from_doi(server_and_pool) -> None:
+    server, pool = server_and_pool
+    out = await server.call_tool(
+        "get_fulltext", {"identifier": "10.3389/fnins.2024.1279668", "max_chars": 5000}
+    )
+    blocks = out[0] if isinstance(out, tuple) else out
+    r = json.loads(blocks[0].text)
+    await pool.aclose()
+    assert r["available"] is True
+    assert r["pmcid"] == "PMC11688368"
+    assert len(r["headings"]) >= 5
+    assert r["sections"]
+
+
+async def test_get_paper_by_pmcid_and_pmid(server_and_pool) -> None:
+    server, pool = server_and_pool
+    results = []
+    for ident in ("PMC11688368", "pmid:31398324"):
+        out = await server.call_tool("get_paper", {"identifier": ident})
+        blocks = out[0] if isinstance(out, tuple) else out
+        results.append(json.loads(blocks[0].text))
+    await pool.aclose()
+    assert results[0]["paper"]["doi"] == "10.3389/fnins.2024.1279668"
+    assert results[1]["paper"]["pmid"] == "31398324"

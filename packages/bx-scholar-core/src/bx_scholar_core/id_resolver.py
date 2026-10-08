@@ -6,11 +6,14 @@ import re
 from dataclasses import dataclass
 from typing import Literal
 
-IDType = Literal["doi", "arxiv", "openalex", "s2", "unknown"]
+IDType = Literal["doi", "arxiv", "openalex", "s2", "pmid", "pmcid", "unknown"]
 
 _DOI_PREFIXES = ("https://doi.org/", "http://doi.org/", "doi:")
 _ARXIV_RE = re.compile(r"^(\d{4}\.\d{4,5})(v\d+)?$")
 _OPENALEX_RE = re.compile(r"^W\d+$", re.IGNORECASE)
+_PMCID_RE = re.compile(r"(?:^|/)(PMC\d+)/?$", re.IGNORECASE)
+# A bare number is ambiguous, so a PMID needs a "pmid:" prefix or a PubMed URL.
+_PMID_RE = re.compile(r"^(?:pmid:\s*|https?://pubmed\.ncbi\.nlm\.nih\.gov/)(\d+)/?$", re.I)
 
 
 @dataclass
@@ -30,6 +33,8 @@ def resolve_id(raw: str) -> ResolvedID:
     - ArXiv: "2401.12345", "2401.12345v2", "arXiv:2401.12345"
     - OpenAlex: "W12345", "https://openalex.org/W12345"
     - Semantic Scholar: "abc123def456" (40-char hex)
+    - PMCID: "PMC1234567" or a PMC article URL
+    - PMID: "pmid:31398324" or a pubmed.ncbi.nlm.nih.gov URL
     """
     s = raw.strip()
 
@@ -39,6 +44,13 @@ def resolve_id(raw: str) -> ResolvedID:
             return ResolvedID(id_type="doi", value=s[len(prefix) :], raw=raw)
     if s.startswith("10.") and "/" in s:
         return ResolvedID(id_type="doi", value=s, raw=raw)
+
+    m = _PMCID_RE.search(s)
+    if m:
+        return ResolvedID(id_type="pmcid", value=m.group(1).upper(), raw=raw)
+    m = _PMID_RE.match(s)
+    if m:
+        return ResolvedID(id_type="pmid", value=m.group(1), raw=raw)
 
     # ArXiv detection
     arxiv_value = s

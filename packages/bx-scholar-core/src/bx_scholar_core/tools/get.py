@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
+from bx_scholar_core.clients.openalex import _parse_work
 from bx_scholar_core.id_resolver import resolve_id
 from bx_scholar_core.logging import get_logger
 
@@ -22,8 +23,9 @@ def register_get_tools(mcp: object, pool: ClientPool) -> None:
 
     @server.tool(structured_output=False)
     async def get_paper(identifier: str) -> str:
-        """Get full metadata for a paper by DOI, arXiv ID, or OpenAlex ID.
-        Accepts: '10.1234/test', 'https://doi.org/10.1234/test', 'W12345', '2401.12345'."""
+        """Get full metadata for a paper by DOI, arXiv ID, OpenAlex ID, PMID or PMCID.
+        Accepts: '10.1234/test', 'https://doi.org/10.1234/test', 'W12345', '2401.12345',
+        'pmid:31398324', 'PMC6789012'."""
         resolved = resolve_id(identifier)
         client = pool.openalex
         try:
@@ -35,9 +37,17 @@ def register_get_tools(mcp: object, pool: ClientPool) -> None:
                     params=client._default_params(),
                     cache_policy=("paper_metadata", 7 * 86400),
                 )
-                from bx_scholar_core.clients.openalex import _parse_work
-
                 paper = _parse_work(resp.json())
+            elif resolved.id_type == "pmid":
+                resp = await client.get(
+                    f"/works/pmid:{resolved.value}",
+                    params=client._default_params(),
+                    cache_policy=("paper_metadata", 7 * 86400),
+                )
+                paper = _parse_work(resp.json())
+            elif resolved.id_type == "pmcid":
+                # OpenAlex has no PMCID lookup; Europe PMC resolves it to a full record.
+                paper = await pool.europepmc.lookup("pmcid", resolved.value)
             elif resolved.id_type == "arxiv":
                 paper = await client.get_work(resolved.value)
                 if not paper:

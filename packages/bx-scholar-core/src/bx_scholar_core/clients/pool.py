@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, TypeVar
 
 from bx_scholar_core.clients.arxiv import ArXivClient
 from bx_scholar_core.clients.crossref import CrossRefClient
+from bx_scholar_core.clients.europepmc import EuropePMCClient
 from bx_scholar_core.clients.openalex import OpenAlexClient
 from bx_scholar_core.clients.scielo import SciELOClient
 from bx_scholar_core.clients.semantic_scholar import SemanticScholarClient
@@ -74,6 +75,10 @@ class ClientPool:
     def unpaywall(self) -> UnpaywallClient:
         s = self.settings
         return self._track(UnpaywallClient(s.polite_email, s.user_agent, cache=self.cache))
+
+    @cached_property
+    def europepmc(self) -> EuropePMCClient:
+        return self._track(EuropePMCClient(user_agent=self.settings.user_agent, cache=self.cache))
 
     async def aclose(self) -> None:
         for client in self._created:
