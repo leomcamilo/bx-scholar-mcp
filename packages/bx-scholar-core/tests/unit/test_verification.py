@@ -427,7 +427,72 @@ def test_cycle2_distinct_dois_are_never_merged() -> None:
     assert d.status == "verified" and d.best.paper.doi == "10.9999/james"
 
 
-def test_cycle2_zero_padded_doi_is_the_same_work() -> None:
+def test_cycle2_zero_padded_doi_same_record_is_one_work() -> None:
     cr = MERGEL.model_copy(update={"doi": "10.1590/s0102-311x2010.26.1.045"})
     oa = MERGEL.model_copy(update={"doi": "10.1590/S0102-311X2010.26.1.45"})
     assert _decide("Mergel", 2019, FULL, ("crossref", cr), ("openalex", oa)).status == "verified"
+
+
+# --- third Codex test cycle --------------------------------------------------
+
+SMITH = Paper(
+    title="Predictive urban mobility models",
+    doi="10.5555/series.01",
+    year=2020,
+    authors=[_a("John Smith", "Smith", "John")],
+)
+
+CYCLE3_AUTHORS = [
+    ("World Health Organization (WHO-2)", [_org("World Health Organization (WHO-1)")], "conflict"),
+    ("Smith, ???", [_a("John Smith", "Smith", "John")], "unknown"),
+    ("Smith, John ???", [_a("John Smith", "Smith", "John")], "unknown"),
+    ("Smith et al.; ???", [_a("John Smith", "Smith", "John")], "unknown"),
+    ("12345", [_a("John Smith", "Smith", "John")], "unknown"),
+    ("CERN", [_org("European Organization for Nuclear Research (CERN)")], "compatible"),
+    ("WHO", [_org("World Health Organization (W.H.O.)")], "compatible"),
+    ("Bank, R.", [_a("Randolph Bank", "Bank", "Randolph")], "exact"),
+    ("Team, V.", [_a("Victoria Team", "Team", "Victoria")], "exact"),
+    ("Group, D.", [_a("David Group", "Group", "David")], "exact"),
+    ("Bank, R.", [_a("Randolph Bank")], "exact"),
+    ("Collaboration, A.", [_a("x", "Collaboration", "Atlas"), _org("ATLAS Collaboration")], "conflict"),
+    ("European Organization for Nuclear Research", [_org("European Organization for Nuclear Research (CERN)")], "compatible"),
+    ("University of California (IRVINE)", [_org("University of California (DAVIS)")], "conflict"),
+]  # fmt: skip
+
+
+@pytest.mark.parametrize(("cited", "records", "expected"), CYCLE3_AUTHORS)
+def test_cycle3_author(cited: str, records: list[Author], expected: str) -> None:
+    assert compare_authors(cited, records)[0] == expected
+
+
+@pytest.mark.parametrize(
+    ("given", "title", "expected"),
+    [
+        ("Cell viability at 10 °C", "Cell viability at − 10 °C", "conflict"),  # noqa: RUF001
+        ("Cell viability at .5 °C", "Cell viability at −.5 °C", "conflict"),  # noqa: RUF001
+        ("Cell viability at -.5 °C", "Cell viability at -.5 °C", "full"),
+        ("Stability of x1 in urban systems", "Stability of x−1 in urban systems", "conflict"),  # noqa: RUF001
+        ("Escaping <i> tags in accessible documents", "Escaping <code>&lt;b&gt;</code> tags in accessible documents", "conflict"),
+        ("Solutions with x ∈ A in finite systems", "Solutions with x &notin; A in finite systems", "conflict"),
+        ("Café methods in urban modelling", "Caf&amp;amp;amp;eacute; methods in urban modelling", "full"),
+    ],
+)  # fmt: skip
+def test_cycle3_title(given: str, title: str, expected: str) -> None:
+    assert compare_title(given, title, mode="full").state == expected
+
+
+def test_cycle3_unpadded_doi_never_fills_fields_across_works() -> None:
+    no_authors = SMITH.model_copy(update={"authors": []})
+    other = SMITH.model_copy(
+        update={"doi": "10.5555/series.1", "title": "Rural environmental risk assessment"}
+    )
+    d = _decide("Smith, John", 2020, SMITH.title, ("crossref", no_authors), ("openalex", other))
+    assert d.status == "insufficient"
+
+
+def test_cycle3_unpadded_doi_keeps_the_right_candidate() -> None:
+    james = SMITH.model_copy(
+        update={"doi": "10.5555/series.1", "authors": [_a("James Smith", "Smith", "James")]}
+    )
+    d = _decide("Smith, James", 2020, SMITH.title, ("crossref", SMITH), ("openalex", james))
+    assert d.status == "verified" and d.best.paper.doi == "10.5555/series.1"

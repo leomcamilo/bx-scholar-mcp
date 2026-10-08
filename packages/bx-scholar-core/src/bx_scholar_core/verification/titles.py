@@ -34,7 +34,8 @@ _UNSPACED_CLASS = "\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af"
 _UNSPACED = re.compile(f"[{_UNSPACED_CLASS}]")
 # hyphen, non-breaking hyphen, figure dash, en dash, em dash, bar, minus,
 # small em dash, small and fullwidth hyphen-minus
-_DASHES = "\u2010\u2011\u2012\u2013\u2014\u2015\u2212\ufe58\ufe63\uff0d"
+# U+2212 MINUS SIGN is not a dash: it stays, and tokens() reads it as a minus.
+_DASHES = "\u2010\u2011\u2012\u2013\u2014\u2015\ufe58\ufe63\uff0d"
 _QUOTES = {
     "\u2018": "'", "\u2019": "'", "\u201a": "'", "\u201b": "'",
     "\u201c": '"', "\u201d": '"', "\u201e": '"', "\u00ab": '"', "\u00bb": '"',
@@ -49,7 +50,33 @@ TitleMatch = Literal["full", "main", "fragment", "locate_only", "conflict", "unk
 # Presentation markup Crossref keeps in titles: H<sub>2</sub>O, <i>in vitro</i>.
 _MARKUP = re.compile(r"</?(?:sub|sup|i|b|em|strong|scp|sc|u|mml:[a-z]+|math)\b[^>]*>", re.I)
 # Symbols that change meaning (x > 0 vs x < 0) and stay as tokens.
-_MATH = "<>=+\u00b1\u00d7\u00f7\u2264\u2265\u2260\u2248\u221e%\u00b0"
+_MATH = (
+    "<>=+\u00b1\u00d7\u00f7\u2264\u2265\u2260\u2248\u221e%\u00b0"
+    # set, logic and calculus operators: x \u2208 A is not x \u2209 A
+    "\u2208\u2209\u220b\u220c\u2282\u2283\u2284\u2285\u2286\u2287\u222a\u2229\u2216"
+    "\u2200\u2203\u2204\u00ac\u2227\u2228\u2295\u2297\u2192\u2190\u2194\u21d2\u21d0\u21d4"
+    "\u2211\u220f\u222b\u2202\u2207\u221a\u221d\u223c\u2245\u2261\u2262\u226a\u226b\u22a5\u2225"
+)
+_CODE = re.compile(r"<code\b[^>]*>(.*?)</code>", re.I | re.S)
+_MAX_UNESCAPE = 10
+
+
+def _plain(text: str) -> str:
+    """Markup removed and entities decoded until nothing changes: sources
+    escape entities several times ("&amp;amp;eacute;") and escape tags
+    ("&lt;b&gt;"). Inside <code> the content is literal: decoded once, kept."""
+    out = []
+    for i, part in enumerate(_CODE.split(text)):
+        if i % 2:  # the inside of a <code> element
+            out.append(html.unescape(part))
+            continue
+        for _ in range(_MAX_UNESCAPE):
+            nxt = html.unescape(_MARKUP.sub("", part))
+            if nxt == part:
+                break
+            part = nxt
+        out.append(part)
+    return "".join(out)
 
 
 def _is_latin_base(ch: str) -> bool:
@@ -60,10 +87,7 @@ def fold(text: str) -> str:
     """Safe normalization shared by titles and names: markup tags, HTML
     entities, Unicode compatibility forms, case, typographic quotes and dashes,
     and accents on Latin letters only (the dakuten in "が" is not an accent)."""
-    # sources double-escape entities ("&amp;mdash;") and escape tags ("&lt;b&gt;")
-    for _ in range(3):
-        text = html.unescape(_MARKUP.sub("", text))
-    text = _MARKUP.sub("", text)
+    text = _plain(text)
     text = unicodedata.normalize("NFKC", text)
     for k, v in _QUOTES.items():
         text = text.replace(k, v)
@@ -80,9 +104,13 @@ def tokens(text: str) -> list[str]:
     """Ordered terms. Letter/digit runs stay whole ("h2o2", "il6", "c2h6o");
     spaceless scripts become one token per character."""
     out: list[str] = []
-    # a minus sign before a number is kept ("-10 °C" is not "10 °C"); a hyphen
-    # inside a term ("COVID-19", "3-D") is not a sign
-    for run in re.findall(rf"[^\W_]+|[{re.escape(_MATH)}]|(?<![\w])-(?=\d)", fold(text)):
+    # A minus is kept: U+2212 always ("x\u22121", "\u2212 10"), an ASCII hyphen
+    # only as the sign of a number ("-10", "-.5"). A hyphen inside a term
+    # ("COVID-19", "3-D") is not a sign.
+    pattern = rf"[^\W_]+|[{re.escape(_MATH)}]|\u2212|(?<![\w])-(?=\.?\d)"
+    for run in re.findall(pattern, fold(text)):
+        if run == "\u2212":
+            run = "-"
         if _UNSPACED.search(run):
             out.extend(_split_unspaced(run))
         else:

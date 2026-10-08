@@ -15,7 +15,7 @@ from typing import Literal
 
 from rapidfuzz import fuzz
 
-from bx_scholar_core.models.paper import Paper
+from bx_scholar_core.models.paper import Author, Paper
 from bx_scholar_core.verification.names import AuthorState, compare_authors
 from bx_scholar_core.verification.titles import TitleEvidence, TitleMode, compare_title, fold
 
@@ -120,18 +120,28 @@ class CandidateEvidence:
         )
 
 
-def canonical_doi(doi: str) -> str:
-    """DOI spelling differences that name the same work: case, and leading
-    zeros in a dot-separated number (Crossref "...26.1.045" vs OpenAlex
-    "...26.1.45"). Anything else is a different DOI, hence a different work."""
-    doi = doi.strip().lower()
+def _unpadded(doi: str) -> str:
     prefix, _, suffix = doi.partition("/")
     return f"{prefix}/" + re.sub(r"(?<=\.)0+(?=[0-9]+(?:\.|$))", "", suffix)
 
 
+def _name_key(a: Author) -> str:
+    return " ".join(fold(a.name or f"{a.given} {a.family}").replace(".", " ").split())
+
+
+def _same_record(a: Paper, b: Paper) -> bool:
+    return (
+        fold(a.title) == fold(b.title)
+        and a.year == b.year
+        and bool(a.authors)
+        # whole names, not surnames: John Smith and James Smith are not one record
+        and [_name_key(x) for x in a.authors] == [_name_key(x) for x in b.authors]
+    )
+
+
 def _identity(p: Paper) -> str:
     if p.doi:
-        return f"doi:{canonical_doi(p.doi)}"
+        return f"doi:{p.doi.strip().lower()}"
     if p.openalex_id:
         return f"oa:{p.openalex_id}"
     return f"t:{fold(p.title)}|{p.year}"
@@ -144,6 +154,7 @@ def merge_candidates(found: list[tuple[str, Paper]]) -> list[tuple[list[str], Pa
     groups: dict[str, list[tuple[str, Paper]]] = {}
     for source, paper in found:
         groups.setdefault(_identity(paper), []).append((source, paper))
+    _join_unpadded(groups)
     merged = []
     for items in groups.values():
         items.sort(key=lambda sp: sp[0] != "crossref")
@@ -161,6 +172,27 @@ def merge_candidates(found: list[tuple[str, Paper]]) -> list[tuple[list[str], Pa
                 base.openalex_id = other.openalex_id
         merged.append((sorted(set(sources)), base))
     return merged
+
+
+def _join_unpadded(groups: dict[str, list[tuple[str, Paper]]]) -> None:
+    """DOIs are opaque, so two DOIs are two works. One exception, seen in
+    OpenAlex: it drops leading zeros Crossref keeps ("...26.1.045" becomes
+    "...26.1.45"). A Crossref-only and an OpenAlex-only group are joined when
+    their DOIs differ only that way AND their records are the same (title,
+    year, author names). Nothing is filled in from one into the other."""
+    keys = [k for k in groups if k.startswith("doi:")]
+    for k in keys:
+        if k not in groups or {s for s, _ in groups[k]} != {"crossref"}:
+            continue
+        for other in keys:
+            if (
+                other != k
+                and other in groups
+                and {s for s, _ in groups[other]} == {"openalex"}
+                and _unpadded(other) == _unpadded(k)
+                and all(_same_record(p, q) for _, p in groups[k] for _, q in groups[other])
+            ):
+                groups[k].extend(groups.pop(other))
 
 
 def assess_candidate(query: Query, paper: Paper, sources: list[str]) -> CandidateEvidence:

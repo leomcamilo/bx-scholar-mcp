@@ -98,24 +98,46 @@ def _content(words: list[str]) -> int:
 def _display(text: str) -> str:
     """What a reader sees: markup removed (MathML, <i>, <sub>), spaces collapsed.
     Citations are written from this, never from the markup."""
-    # Crossref double-escapes entities ("&amp;mdash;") and escapes tags ("&lt;b&gt;")
-    for _ in range(3):
-        text = html.unescape(_TAGS.sub("", text))
-    text = _TAGS.sub("", text)
-    return re.sub(r"\s+", " ", text).strip()
+    # Crossref escapes entities several times ("&amp;amp;eacute;") and escapes
+    # tags ("&lt;b&gt;"); what is inside <code> is shown literally
+    out = []
+    for i, part in enumerate(re.split(r"<code\b[^>]*>(.*?)</code>", text, flags=re.I | re.S)):
+        if i % 2:
+            out.append(html.unescape(part))
+            continue
+        for _ in range(10):
+            nxt = html.unescape(_TAGS.sub("", part))
+            if nxt == part:
+                break
+            part = nxt
+        out.append(part)
+    return re.sub(r"\s+", " ", "".join(out)).strip()
 
 
 # Only typesetting tags: "x < 0 and y > 0" is text, not markup.
 _TAGS = re.compile(r"</?(?:sub|sup|i|b|em|strong|scp|sc|u|mml:[a-z]+|math)\b[^>]*>", re.I)
 # A Crossref "person" that is really a collaboration: family "Consortium",
-# given "DEEP". Annotated as the organization "DEEP Consortium".
+# given "DEEP". Annotated as the organization "DEEP Consortium" only with
+# evidence: an acronym as given name, or the same name listed as an
+# organization in the record. Victoria Team is a person.
 _COLLAB = re.compile(
     r"^(?:consortium|collaboration|group|committee|network|team|investigators)$", re.I
 )
 
 
-def _is_collab(a: dict) -> bool:
-    return bool(_COLLAB.match((a.get("family") or "").strip()))
+def _is_collab(a: dict, org_names: set[str]) -> bool:
+    if not _COLLAB.match((a.get("family") or "").strip()):
+        return False
+    given = a.get("given") or ""
+    return sum(c.isupper() for c in given) >= 2 or _whole(a) in org_names
+
+
+def _documented(org: str) -> set[str]:
+    return {re.sub(r"\W", "", x).casefold() for x in re.findall(r"\(([^)]*)\)", org)}
+
+
+def _whole(a: dict) -> str:
+    return f"{a.get('given') or ''} {a['family']}".strip().casefold()
 
 
 @dataclass
@@ -162,6 +184,7 @@ def load_works() -> list[Work]:
         oa_raw = rec["http"]["openalex_work"]
         oa = json.loads(oa_raw["body"]) if oa_raw["status"] == 200 else None
         authors = item.get("author") or []
+        org_names = {a["name"].strip().casefold() for a in authors if a.get("name")}
         works.append(
             Work(
                 id=rec["id"],
@@ -179,13 +202,16 @@ def load_works() -> list[Work]:
                         "given": re.sub(r"[()]", "", a.get("given") or "").strip(),
                     }
                     for a in authors
-                    if a.get("family") and not _is_collab(a)
+                    if a.get("family") and not _is_collab(a, org_names)
                 ],
                 orgs=[a["name"].strip() for a in authors if a.get("name") and not a.get("family")]
                 + [
                     f"{a.get('given') or ''} {a['family']}".strip()
                     for a in authors
-                    if a.get("family") and not a.get("name") and _is_collab(a)
+                    if a.get("family")
+                    and not a.get("name")
+                    and _is_collab(a, org_names)
+                    and _whole(a) not in org_names  # already listed by name
                 ],
                 crossref=item,
                 openalex=oa,
@@ -415,7 +441,8 @@ def generate(works: list[Work]) -> list[Case]:
             if (
                 2 <= len(acronym) <= 6
                 and not _has_family(w, acronym)
-                and f"({acronym})" not in w.orgs[0]
+                # not one the record documents: "(WHO)", "(W.H.O.)", "(CERN)"
+                and acronym.casefold() not in _documented(w.orgs[0])
             ):
                 add("org_bare_acronym", acronym, y, full, "auto", "insufficient")
 
