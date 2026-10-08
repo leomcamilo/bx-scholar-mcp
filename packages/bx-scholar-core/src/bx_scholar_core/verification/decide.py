@@ -9,6 +9,7 @@ closest match; it never confirms.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -119,45 +120,21 @@ class CandidateEvidence:
         )
 
 
+def canonical_doi(doi: str) -> str:
+    """DOI spelling differences that name the same work: case, and leading
+    zeros in a dot-separated number (Crossref "...26.1.045" vs OpenAlex
+    "...26.1.45"). Anything else is a different DOI, hence a different work."""
+    doi = doi.strip().lower()
+    prefix, _, suffix = doi.partition("/")
+    return f"{prefix}/" + re.sub(r"(?<=\.)0+(?=[0-9]+(?:\.|$))", "", suffix)
+
+
 def _identity(p: Paper) -> str:
     if p.doi:
-        return f"doi:{p.doi.lower()}"
+        return f"doi:{canonical_doi(p.doi)}"
     if p.openalex_id:
         return f"oa:{p.openalex_id}"
     return f"t:{fold(p.title)}|{p.year}"
-
-
-def _same_metadata(a: Paper, b: Paper) -> bool:
-    def fam(p: Paper) -> set[str]:
-        # last word of the family (or of the display name): Crossref may put the
-        # whole name in family ("Young-Ju Rhee"), OpenAlex only a display name
-        return {
-            fold(x.family or x.name).split()[-1] for x in p.authors if (x.family or x.name).strip()
-        }
-
-    return (
-        bool(a.title)
-        and fold(a.title) == fold(b.title)
-        and a.year == b.year
-        and bool(fam(a) & fam(b))
-    )
-
-
-def _merge_cross_source(groups: dict[str, list[tuple[str, Paper]]]) -> None:
-    """A Crossref record and an OpenAlex record left without a DOI match are the
-    same work when title, year and authors agree: sources disagree on DOI
-    spelling ("...26.1.045" vs "...26.1.45"). Records of the same source are
-    never merged, so two real works with the same metadata stay two."""
-    singles = {k: v for k, v in groups.items() if len({s for s, _ in v}) == 1}
-    for k_cr, v_cr in list(singles.items()):
-        if v_cr[0][0] != "crossref" or k_cr not in groups:
-            continue
-        for k_oa, v_oa in list(singles.items()):
-            if v_oa[0][0] != "openalex" or k_oa not in groups:
-                continue
-            if _same_metadata(v_cr[0][1], v_oa[0][1]):
-                groups[k_cr].extend(groups.pop(k_oa))
-                break
 
 
 def merge_candidates(found: list[tuple[str, Paper]]) -> list[tuple[list[str], Paper]]:
@@ -167,7 +144,6 @@ def merge_candidates(found: list[tuple[str, Paper]]) -> list[tuple[list[str], Pa
     groups: dict[str, list[tuple[str, Paper]]] = {}
     for source, paper in found:
         groups.setdefault(_identity(paper), []).append((source, paper))
-    _merge_cross_source(groups)
     merged = []
     for items in groups.values():
         items.sort(key=lambda sp: sp[0] != "crossref")

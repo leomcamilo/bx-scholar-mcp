@@ -57,7 +57,8 @@ def _letters(text: str) -> str:
 def _surname_key(text: str) -> list[str]:
     """Surname as comparable words: folded, hyphen and space equivalent,
     particles kept as words of their own."""
-    return [w for w in re.split(r"[\s\-'.()]+", fold(text)) if w and w not in _NOISE]
+    words = re.split(r"[\s\-'.()]+", fold(text))
+    return [w for w in words if w and w not in _NOISE and any(c.isalnum() for c in w)]
 
 
 @dataclass(frozen=True)
@@ -188,9 +189,7 @@ def parse_cited(name: str) -> CitedAuthor:
     one. A name with organization words is also read as a person, because
     sources sometimes encode a collaboration that way (family "Consortium",
     given "DEEP")."""
-    aliases = frozenset(
-        fold(a).strip() for a in re.findall(r"\(([^)]*)\)", name) if a.strip().isupper()
-    )
+    aliases = _aliases(name)
     raw = re.sub(r"\([^)]*\)", " ", name).strip().strip(",;")
     if not raw or raw.startswith(","):
         # "(The NANOGrav Collaboration)", "(Takayuki Sato), 佐藤 孝幸": the
@@ -200,13 +199,13 @@ def parse_cited(name: str) -> CitedAuthor:
     if not raw:
         return CitedAuthor(name, (), "")
     if _ORG_WORDS.search(raw):
-        readings = _person_readings(raw) if ("," in raw or len(raw.split()) <= 3) else ()
-        return CitedAuthor(name, readings, literal, "", aliases, literal)
+        return CitedAuthor(name, (), literal, "", aliases, literal)
     toks = raw.split()
     acronym = ""
     if len(toks) == 1 and toks[0].isupper() and toks[0].isalpha() and 2 <= len(toks[0]) <= 6:
         acronym = fold(toks[0])
-    return CitedAuthor(name, _person_readings(raw), "", acronym, aliases, literal)
+    readings = tuple(r for r in _person_readings(raw) if r.surname)  # "???" names no one
+    return CitedAuthor(name, readings, "", acronym, aliases, literal)
 
 
 def _person_readings(raw: str) -> tuple[PersonReading, ...]:
@@ -271,24 +270,45 @@ class RecordAuthor:
     aliases: frozenset[str] = frozenset()
 
 
+def _is_acronym_of(acr: str, base: str) -> bool:
+    """ "WHO" abbreviates "World Health Organization": its letters are initials
+    of the name's words, in order (stopwords may be skipped)."""
+    letters = [c for c in fold(acr) if c.isalpha()]
+    initials = [w[0] for w in re.findall(r"[^\W\d_]+", fold(base))]
+    it = iter(initials)
+    return len(letters) >= 2 and all(any(c == x for x in it) for c in letters)
+
+
+def _parenthesized_aliases(text: str) -> list[str]:
+    base = re.sub(r"\([^)]*\)", " ", text)
+    return [x.strip() for x in re.findall(r"\(([^)]*)\)", text) if _is_acronym_of(x, base)]
+
+
 def _aliases(text: str) -> frozenset[str]:
-    """Acronyms the record itself gives in parentheses: "World Health Organization (WHO)"."""
-    return frozenset(
-        fold(x).strip() for x in re.findall(r"\(([^)]*)\)", text) if x.strip().isupper()
-    )
+    """Acronyms the record itself gives in parentheses: "World Health
+    Organization (WHO)". A parenthesis that does not abbreviate the name is a
+    qualifier ("University of California (IRVINE)")."""
+    return frozenset(fold(x) for x in _parenthesized_aliases(text))
 
 
 def _org_name(text: str) -> str:
     """Organization name for comparison. A parenthesized acronym is an alias and
     is set aside ("World Health Organization (WHO)"); any other parenthesis is a
     qualifier and stays ("University of California (Berkeley)")."""
-    without_alias = re.sub(r"\(\s*[A-Z][A-Z0-9&.\-]*\s*\)", " ", text)
+    without_alias = text
+    for alias in _parenthesized_aliases(text):
+        without_alias = without_alias.replace(f"({alias})", " ")
     return " ".join(_surname_key(re.sub(r"[()]", " ", without_alias)))
 
 
 def record_author(a: Author) -> RecordAuthor:
     if a.kind == "organization" or (a.literal and not a.family):
         text = a.literal or a.name
+        return RecordAuthor((), _org_name(text), True, _aliases(text))
+    if a.family and _ORG_WORDS.search(f"{a.given} {a.family}"):
+        # Crossref sometimes encodes a collaboration as a person (family
+        # "Consortium", given "DEEP"): it is the organization "DEEP Consortium"
+        text = f"{a.given} {a.family}".strip()
         return RecordAuthor((), _org_name(text), True, _aliases(text))
     if a.family:
         family, given_text = a.family, a.given
@@ -368,7 +388,7 @@ def compare_author(cited: CitedAuthor, record: RecordAuthor) -> AuthorState:
         return "conflict"
     if cited.organization and not cited.readings:
         return "conflict"
-    whole = fold(re.sub(r"\s+", "", cited.raw))
+    whole = fold(re.sub(r"[\s()]+", "", cited.raw))
     if _CJK_NAME.fullmatch(whole):
         # CJK names are often cited whole, family first, no space ("张芳蕾")
         for r in record.readings:
@@ -424,6 +444,9 @@ def compare_authors(
     the string splits in more than one way, the best-supported split counts."""
     splits = split_cited_authors(cited_text)
     if not splits:
+        if cited_text.strip():
+            # "et al." alone, or only punctuation: something was written
+            return "unknown", "the cited author could not be interpreted"
         return "unknown", "no author given"
     order = {"exact": 0, "compatible": 1, "unknown": 2, "conflict": 3}
     results = [_compare_split(names, record_authors, truncated) for names in splits]
@@ -434,7 +457,9 @@ def _compare_split(
     names: list[str], record_authors: list[Author], truncated: bool
 ) -> tuple[AuthorState, str]:
     cited = [parse_cited(n) for n in names]
-    cited = [c for c in cited if c.readings or c.organization or c.acronym]
+    if any(not (c.readings or c.organization or c.acronym) for c in cited):
+        # one of the names cannot be read ("Smith, John; ()"): never drop it
+        return "unknown", "a cited author could not be interpreted"
     if not cited:
         # something was written but no name could be read from it: never treat
         # that as "no author given", which would skip the check

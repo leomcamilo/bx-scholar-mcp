@@ -367,3 +367,67 @@ def test_search_output_trims_long_author_lists() -> None:
     d = _dump(p)
     assert len(d["authors"]) == 100
     assert d["authors_truncated"] is True
+
+
+# --- second Codex test cycle -------------------------------------------------
+
+DEEP = Author(name="DEEP Consortium", family="Consortium", given="DEEP", structure_source="source")
+
+CYCLE2_AUTHORS = [
+    ("Smith, John; ()", [_a("John Smith", "Smith", "John")], "unknown"),
+    ("et al.", [_a("John Smith", "Smith", "John")], "unknown"),
+    ("???", [_a("John Smith", "Smith", "John")], "unknown"),
+    ("Consortium, D.", [DEEP], "conflict"),
+    ("Consortium D", [DEEP], "conflict"),
+    ("Consortium", [DEEP], "conflict"),
+    ("DEEP Consortium", [DEEP], "exact"),
+    ("University of California (IRVINE)", [_org("University of California (DAVIS)")], "conflict"),
+    ("World Health Organization (WHO)", [_org("World Health Organization (WHO)")], "exact"),
+    ("(张芳蕾)", [_a("张芳蕾", "张", "芳蕾")], "exact"),
+]  # fmt: skip
+
+
+@pytest.mark.parametrize(("cited", "records", "expected"), CYCLE2_AUTHORS)
+def test_cycle2_author(cited: str, records: list[Author], expected: str) -> None:
+    state, _ = compare_authors(cited, records)
+    if expected == "exact":
+        assert state in ("exact", "compatible")
+    else:
+        assert state == expected
+
+
+def test_cycle2_unreadable_author_is_not_verified() -> None:
+    for author in ("Smith, John; ()", "et al.", "???"):
+        assert _decide(author, 2019, FULL, ("crossref", MERGEL)).status != "verified"
+
+
+@pytest.mark.parametrize(
+    ("given", "title", "mode", "expected"),
+    [
+        ("Storage at -10 °C", "Storage at 10 °C", "full", "conflict"),
+        ("Storage at -10 °C", "Storage at −10 °C", "full", "full"),  # noqa: RUF001
+        ("COVID-19 pandemic", "COVID 19 pandemic", "full", "full"),
+        ("Effects of reform — a review", "Effects of reform &amp;mdash; a review", "full", "full"),
+        ("Café culture in Paris", "Caf&amp;eacute; culture in Paris", "full", "full"),
+    ],
+)  # fmt: skip
+def test_cycle2_title(given: str, title: str, mode: str, expected: str) -> None:
+    assert compare_title(given, title, mode=mode).state == expected
+
+
+def test_cycle2_distinct_dois_are_never_merged() -> None:
+    reprint = MERGEL.model_copy(update={"doi": "10.1016/j.giq.2019.06.999"})
+    d = _decide("Mergel", 2019, FULL, ("crossref", MERGEL), ("openalex", reprint))
+    assert d.status == "ambiguous"
+    john = MERGEL.model_copy(update={"authors": [_a("John Smith", "Smith", "John")]})
+    james = john.model_copy(
+        update={"doi": "10.9999/james", "authors": [_a("James Smith", "Smith", "James")]}
+    )
+    d = _decide("Smith, James", 2019, FULL, ("crossref", john), ("openalex", james))
+    assert d.status == "verified" and d.best.paper.doi == "10.9999/james"
+
+
+def test_cycle2_zero_padded_doi_is_the_same_work() -> None:
+    cr = MERGEL.model_copy(update={"doi": "10.1590/s0102-311x2010.26.1.045"})
+    oa = MERGEL.model_copy(update={"doi": "10.1590/S0102-311X2010.26.1.45"})
+    assert _decide("Mergel", 2019, FULL, ("crossref", cr), ("openalex", oa)).status == "verified"

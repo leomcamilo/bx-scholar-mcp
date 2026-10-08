@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import gzip
 import hashlib
+import html
 import json
 import random
 import re
@@ -97,8 +98,24 @@ def _content(words: list[str]) -> int:
 def _display(text: str) -> str:
     """What a reader sees: markup removed (MathML, <i>, <sub>), spaces collapsed.
     Citations are written from this, never from the markup."""
-    text = re.sub(r"<[^>]+>", "", text)
+    # Crossref double-escapes entities ("&amp;mdash;") and escapes tags ("&lt;b&gt;")
+    for _ in range(3):
+        text = html.unescape(_TAGS.sub("", text))
+    text = _TAGS.sub("", text)
     return re.sub(r"\s+", " ", text).strip()
+
+
+# Only typesetting tags: "x < 0 and y > 0" is text, not markup.
+_TAGS = re.compile(r"</?(?:sub|sup|i|b|em|strong|scp|sc|u|mml:[a-z]+|math)\b[^>]*>", re.I)
+# A Crossref "person" that is really a collaboration: family "Consortium",
+# given "DEEP". Annotated as the organization "DEEP Consortium".
+_COLLAB = re.compile(
+    r"^(?:consortium|collaboration|group|committee|network|team|investigators)$", re.I
+)
+
+
+def _is_collab(a: dict) -> bool:
+    return bool(_COLLAB.match((a.get("family") or "").strip()))
 
 
 @dataclass
@@ -162,9 +179,14 @@ def load_works() -> list[Work]:
                         "given": re.sub(r"[()]", "", a.get("given") or "").strip(),
                     }
                     for a in authors
-                    if a.get("family")
+                    if a.get("family") and not _is_collab(a)
                 ],
-                orgs=[a["name"].strip() for a in authors if a.get("name") and not a.get("family")],
+                orgs=[a["name"].strip() for a in authors if a.get("name") and not a.get("family")]
+                + [
+                    f"{a.get('given') or ''} {a['family']}".strip()
+                    for a in authors
+                    if a.get("family") and not a.get("name") and _is_collab(a)
+                ],
                 crossref=item,
                 openalex=oa,
             )

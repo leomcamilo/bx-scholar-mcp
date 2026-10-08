@@ -60,8 +60,10 @@ def fold(text: str) -> str:
     """Safe normalization shared by titles and names: markup tags, HTML
     entities, Unicode compatibility forms, case, typographic quotes and dashes,
     and accents on Latin letters only (the dakuten in "が" is not an accent)."""
+    # sources double-escape entities ("&amp;mdash;") and escape tags ("&lt;b&gt;")
+    for _ in range(3):
+        text = html.unescape(_MARKUP.sub("", text))
     text = _MARKUP.sub("", text)
-    text = html.unescape(text)
     text = unicodedata.normalize("NFKC", text)
     for k, v in _QUOTES.items():
         text = text.replace(k, v)
@@ -78,7 +80,9 @@ def tokens(text: str) -> list[str]:
     """Ordered terms. Letter/digit runs stay whole ("h2o2", "il6", "c2h6o");
     spaceless scripts become one token per character."""
     out: list[str] = []
-    for run in re.findall(rf"[^\W_]+|[{re.escape(_MATH)}]", fold(text)):
+    # a minus sign before a number is kept ("-10 °C" is not "10 °C"); a hyphen
+    # inside a term ("COVID-19", "3-D") is not a sign
+    for run in re.findall(rf"[^\W_]+|[{re.escape(_MATH)}]|(?<![\w])-(?=\d)", fold(text)):
         if _UNSPACED.search(run):
             out.extend(_split_unspaced(run))
         else:

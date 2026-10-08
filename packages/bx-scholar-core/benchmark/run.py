@@ -115,6 +115,8 @@ def _transport(
 def classify(case: dict, result: dict, work_dois: set[str]) -> str | None:
     exp, got = case["expected_status"], result["status"]
     doi = (result.get("match") or {}).get("doi", "").lower()
+    if result.get("verified") is not (got == "verified"):
+        return "inconsistent"  # verified flag and status disagree: always an error
     if got == "verified" and (exp != "verified" or doi not in work_dois):
         return "false_positive"
     if exp == "verified" and got != "verified":
@@ -154,12 +156,11 @@ async def run(split: str, limit: int | None, verbose: bool) -> dict:
             pool.crossref, pool.openalex, case["author"], case["year"], case["title"],
             case["title_mode"],
         )  # fmt: skip
-        # a request the simulator refused is a harness failure, counted on its own
-        kind = (
-            "harness"
-            if refusals or result.get("source_errors")
-            else classify(case, result, raw[case["work"]]["dois"])
-        )
+        # a wrong verdict is counted as such even when a source failed; a source
+        # failure on an otherwise right answer is a harness failure
+        kind = classify(case, result, raw[case["work"]]["dois"])
+        if kind is None and (refusals or result.get("source_errors")):
+            kind = "harness"
         t = by_transformation.setdefault(case["transformation"], Counter())
         t["cases"] += 1
         if kind:
@@ -186,7 +187,9 @@ async def run(split: str, limit: int | None, verbose: bool) -> dict:
         "by_kind": dict(by_kind),
         "gate": {
             "max_errors": MAX_ERRORS,
-            "passed": total_errors <= MAX_ERRORS and by_kind["false_positive"] == 0,
+            "passed": total_errors <= MAX_ERRORS
+            and by_kind["false_positive"] == 0
+            and by_kind["inconsistent"] == 0,
         },
         "by_transformation": {k: dict(v) for k, v in sorted(by_transformation.items())},
     }
