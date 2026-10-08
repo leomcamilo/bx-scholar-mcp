@@ -5,6 +5,13 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
+from bx_scholar_core.citations import (
+    CITATION_SOURCES,
+    Direction,
+    fetch_citations,
+    parse_sources,
+    resolve_to_doi,
+)
 from bx_scholar_core.clients.openalex import _parse_work
 from bx_scholar_core.id_resolver import resolve_id
 from bx_scholar_core.logging import get_logger
@@ -119,20 +126,36 @@ def register_get_tools(mcp: object, pool: ClientPool) -> None:
     @server.tool(structured_output=False)
     async def get_citations(
         identifier: str,
-        direction: str = "citing",
+        direction: Direction = "citing",
         per_page: int = 25,
+        sources: str = "openalex,opencitations",
     ) -> str:
         """Get papers that cite this paper (citing) or papers cited by it (references).
-        Essential for snowballing. Accepts DOI or OpenAlex ID."""
-        resolved = resolve_id(identifier)
-        doi = resolved.value if resolved.id_type == "doi" else identifier
-        client = pool.openalex
-        papers = await client.get_citations(doi, direction, per_page)
+        Essential for snowballing. Accepts DOI, OpenAlex ID, PMID ('pmid:123') or arXiv ID.
+        sources: 'openalex' (ranked by citation count), 'opencitations' (open Crossref
+        links, often finds citations OpenAlex misses) or both (default). With both,
+        OpenAlex gives its top per_page by citation count and OpenCitations adds up to
+        per_page more that are not in that page (most recent first).
+        total_links compares coverage: how many links each source knows for the DOI.
+        Each result's external_ids.citation_sources names the sources that returned it,
+        and external_ids.author_self_citation marks author self-citations."""
+        names, unknown = parse_sources(sources)
+        if unknown or not names:
+            return json.dumps({"error": f"sources must be from {list(CITATION_SOURCES)}"})
+        try:
+            doi = await resolve_to_doi(pool, identifier)
+        except Exception as exc:
+            return json.dumps({"error": f"Could not resolve {identifier}: {exc}"})
+        if not doi:
+            return json.dumps({"error": f"No DOI found for {identifier}; citations are DOI-keyed"})
+        papers, meta = await fetch_citations(pool, doi, direction, per_page, names)
         return json.dumps(
             {
                 "direction": direction,
                 "identifier": identifier,
+                "doi": doi,
                 "count": len(papers),
+                **meta,
                 "results": [p.model_dump(exclude_defaults=True) for p in papers],
             },
             ensure_ascii=False,

@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- OpenCitations (Index v2 + Meta v1): `get_citations(sources="openalex,opencitations")` (new default) merges both, reporting `total_links` per source and flagging author self-citations; `snowball` and `build_citation_network` accept `citation_sources`
+- Optional `OPENCITATIONS_TOKEN` (free)
 - Optional `OPENALEX_API_KEY` (free). Without a key, OpenAlex now enforces a daily budget shared by everyone on the same IP
 
 ### Fixed
@@ -41,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `get_fulltext`: `max_chars` also caps the first section (`truncated_section`), and HTTP errors other than 404 are reported as errors instead of "no full text"
 - Deduplication merges records sharing any identifier, including a copy with DOI+PMID and one with PMID only
 - `load_settings(project_root=...)` reads the `.env` of that root
+- `get_citations` and `snowball` claimed to accept OpenAlex IDs but built a DOI URL from them and returned nothing; OpenAlex IDs, PMIDs and arXiv IDs are now resolved to a DOI first
 - SciELO search returned nothing: OpenAlex rejects the removed `host_venue` filter (400) and the direct fallback is blocked (403). Now filters SciELO Brasil by DOI prefix 10.1590
 - Semantic Scholar search turned errors (including 429) into an empty result
 - Tavily results were counted and then dropped; they now come back as `source_type: web`

@@ -115,3 +115,33 @@ async def test_search_theses_latam_doctoral(server_and_pool) -> None:
     assert set(r["per_source"]) == {"bdtd", "lareferencia"}
     assert all(p["external_ids"]["format"] == "doctoralThesis" for p in r["results"])
     assert all(p["year"] >= 2018 for p in r["results"] if p.get("year"))
+
+
+async def test_get_citations_merges_openalex_and_opencitations(server_and_pool) -> None:
+    server, pool = server_and_pool
+    out = await server.call_tool(
+        "get_citations",
+        {"identifier": "10.1016/j.giq.2019.06.002", "per_page": 10},
+    )
+    blocks = out[0] if isinstance(out, tuple) else out
+    r = json.loads(blocks[0].text)
+    await pool.aclose()
+    assert "errors" not in r, r.get("errors")
+    assert r["per_source"]["openalex"] > 0
+    assert r["total_links"]["openalex"] > 100
+    assert r["total_links"]["opencitations"] > 100
+    assert all(p.get("external_ids", {}).get("citation_sources") for p in r["results"])
+
+
+async def test_snowball_from_openalex_id(server_and_pool) -> None:
+    """Seeds given as OpenAlex IDs used to resolve to nothing."""
+    server, pool = server_and_pool
+    out = await server.call_tool(
+        "snowball",
+        {"seed_identifiers": "W2955156490", "direction": "references", "max_papers": 20},
+    )
+    blocks = out[0] if isinstance(out, tuple) else out
+    r = json.loads(blocks[0].text)
+    await pool.aclose()
+    assert r["seeds"] == ["10.1016/j.giq.2019.06.002"]
+    assert r["stats"]["total_papers"] > 0
