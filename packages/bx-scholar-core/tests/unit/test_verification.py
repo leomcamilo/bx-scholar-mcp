@@ -608,3 +608,54 @@ def test_cycle5_author(cited: str, records: list[Author], expected: str) -> None
 )  # fmt: skip
 def test_cycle5_title(given: str, title: str, expected: str) -> None:
     assert compare_title(given, title, mode="full").state == expected
+
+
+# --- sixth Codex test cycle --------------------------------------------------
+
+CYCLE6_AUTHORS = [
+    ("John2 Paul Bank", [_a("x", "Bank", "John Paul")], "unknown"),
+    ("Bank, John Paul", [_a("x", "Bank", "John2 Paul Bank")], "unknown"),
+    ("World Health Organization II", [_org("World Health Organization III")], "conflict"),
+    ("Bank W", [_a("World Bank")], "unknown"),
+    ("Bank R", [_a("Randolph Bank")], "unknown"),
+]  # fmt: skip
+
+
+@pytest.mark.parametrize(("cited", "records", "expected"), CYCLE6_AUTHORS)
+def test_cycle6_author(cited: str, records: list[Author], expected: str) -> None:
+    assert compare_authors(cited, records)[0] == expected
+
+
+@pytest.mark.parametrize(
+    ("given", "title", "expected"),
+    [
+        ("Estimating x y in populations", "Estimating x / y in populations", "conflict"),
+        ("Computing x y in finite systems", "Computing x * y in finite systems", "conflict"),
+        ("Counting n! permutations in finite systems", "Counting n!! permutations in finite systems", "conflict"),
+        ("Estimating x in complex systems", "Estimating x* in complex systems", "conflict"),
+        ("Accessing ab method in software systems", "Accessing a.b.method in software systems", "conflict"),
+        ("Escaping <code>a\ue002b</code> in software systems", "Escaping <code>a&b</code> in software systems", "conflict"),
+        ("Calling <code>x\ue001 y</code> in software systems", "Calling <code>x\ue001/y</code> in software systems", "conflict"),
+        ("USA policy on urban mobility", "U.S.A policy on urban mobility", "full"),
+        ("Calling _exit in software systems", "Calling <code>_exit</code> in software systems", "full"),
+        ("Calling f(x) in software systems", "Calling <code>f(x)</code> in software systems", "full"),
+        ("Computing x**2 in finite systems", "Computing <code>x**2</code> in finite systems", "full"),
+        ("Accessing a.b.c in software systems", "Accessing <code>a.b.c</code> in software systems", "full"),
+    ],
+)  # fmt: skip
+def test_cycle6_title(given: str, title: str, expected: str) -> None:
+    assert compare_title(given, title, mode="full").state == expected
+
+
+def test_cycle6_generator_keeps_spaces_around_code() -> None:
+    import importlib.util
+    import sys
+    from pathlib import Path
+
+    path = Path(__file__).parents[2] / "benchmark" / "generate.py"
+    spec = importlib.util.spec_from_file_location("bx_benchmark_generate", path)
+    gen = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = gen  # its dataclasses look themselves up there
+    spec.loader.exec_module(gen)
+    shown = gen._display("Calling <code>foo</code> in software systems")
+    assert shown == "Calling foo in software systems"

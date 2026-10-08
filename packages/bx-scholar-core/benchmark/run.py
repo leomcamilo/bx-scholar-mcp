@@ -115,38 +115,35 @@ def _transport(
 
 
 def _key(text: str) -> str:
-    """Letters and digits only, for comparing a returned field with the frozen one."""
+    """A returned field as comparable text: markup and entities removed, case
+    and spacing ignored, every other character kept ("C2-" is not "C2+")."""
     for _ in range(5):
         text = html.unescape(re.sub(r"<[^>]+>", "", text))
-    return "".join(c for c in text.casefold() if c.isalnum())
+    return "".join(text.casefold().split())
 
 
-def _frozen(work: dict) -> tuple[set[str], set[int], set[str]]:
-    """Titles, years and author name words of the work, from its frozen records."""
+def _frozen(work: dict) -> tuple[set[str], set[str], set[int], set[str]]:
+    """Titles, subtitles, years and full author names of the work, from its
+    frozen records."""
     cr, oa = work["crossref"], work["openalex"] or {}
     titles = {_key(t) for t in cr.get("title") or []} | {_key(oa.get("title") or "")}
+    subtitles = {_key(t) for t in cr.get("subtitle") or []} | {""}
     years = {y for y in (oa.get("publication_year"),) if y}
     for k in ("published-print", "published-online", "published", "issued"):
         parts = (cr.get(k) or {}).get("date-parts") or [[None]]
         if parts and parts[0] and parts[0][0]:
             years.add(int(parts[0][0]))
-    names = {
-        _key(w)
-        for a in cr.get("author") or []
-        for w in f"{a.get('family', '')} {a.get('name', '')}".split()
-    }
-    names |= {
-        _key(w)
-        for a in oa.get("authorships") or []
-        for w in ((a.get("author") or {}).get("display_name") or "").split()
-    }
-    return titles - {""}, years, names - {""}
+    names = {_key(a.get("name") or f"{a.get('given', '')} {a.get('family', '')}")
+             for a in cr.get("author") or []}  # fmt: skip
+    names |= {_key((a.get("author") or {}).get("display_name") or "")
+              for a in oa.get("authorships") or []}  # fmt: skip
+    return titles - {""}, subtitles, years, names - {""}
 
 
 def _coherent(case: dict, result: dict, work: dict) -> bool:
     """A verified answer must carry the evidence for it: confirming checks, and
-    a returned record that is the work's own (title, year and an author taken
-    from the frozen records), not just its DOI."""
+    a returned record that is the work's own (title, subtitle, year and every
+    author taken from the frozen records), not just its DOI."""
     checks = result.get("checks") or {}
     match = result.get("match") or {}
     if checks.get("title_match") not in ("full", "main", "fragment"):
@@ -157,11 +154,13 @@ def _coherent(case: dict, result: dict, work: dict) -> bool:
         return False
     if case["year"] is not None and abs((match.get("year") or -99) - case["year"]) > 1:
         return False
-    titles, years, names = _frozen(work)
+    titles, subtitles, years, names = _frozen(work)
     if _key(match.get("title") or "") not in titles or match.get("year") not in years:
         return False
-    returned = {_key(w) for a in match.get("authors") or [] for w in str(a.get("name", "")).split()}
-    return not names or bool(returned & names)
+    if _key(match.get("subtitle") or "") not in subtitles:
+        return False
+    returned = [_key(str(a.get("name", ""))) for a in match.get("authors") or []]
+    return not names or all(n in names for n in returned)
 
 
 def classify(case: dict, result: dict, work: dict) -> str | None:

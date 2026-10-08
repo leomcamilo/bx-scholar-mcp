@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal
 
 from bx_scholar_core.models.paper import Author
@@ -76,7 +76,7 @@ def _unreadable(name: str) -> bool:
         return True
     if any(unicodedata.category(ch)[0] in "SC" for ch in name if not ch.isspace()):
         return True  # symbols, emoji, control or unassigned characters
-    if re.search(r"\d", re.sub(r"\([^)]*\)", "", name)) and not is_org_name(name):
+    if re.search(r"\d", re.sub(r"\([^)]*\)", "", name)) and not _strong_org(name):
         return True  # "Smith, 12345", "Smith, John2": a person's name has no digits
     return any(not re.search(r"\w", t) and not _NAME_PUNCT.fullmatch(t) for t in name.split())
 
@@ -363,11 +363,15 @@ def _org_parts(text: str) -> tuple[str, str]:
         for x in re.findall(r"\(([^)]*)\)", text)
         if x.strip() and x.strip() not in abbreviations
     ]
-    base = " ".join(_surname_key(re.sub(r"\([^)]*\)", " ", text)))
+    # every word counts in an organization name: "III" is not a personal suffix here
+    base = _org_key(re.sub(r"\([^)]*\)", " ", text))
     if not base:  # "(The NANOGrav Collaboration)": the parenthesis is the name
-        return " ".join(_surname_key(re.sub(r"[()]", " ", text))), ""
-    # a qualifier keeps every word: "(II)" is not "(III)"
-    return base, " ".join(w for w in re.split(r"[\s\-'.()]+", fold(" ".join(quals))) if w)
+        return _org_key(re.sub(r"[()]", " ", text)), ""
+    return base, _org_key(" ".join(quals))  # "(II)" is not "(III)"
+
+
+def _org_key(text: str) -> str:
+    return " ".join(w for w in re.split(r"[\s\-'.()]+", fold(text)) if w)
 
 
 def _org_record(text: str, structured: bool) -> RecordAuthor:
@@ -478,8 +482,11 @@ def compare_author(cited: CitedAuthor, record: RecordAuthor) -> AuthorState:
         st = _compare_people(cited, record)
         if st not in ("exact", "compatible"):
             return st
-        spelled = any(not ini for c in cited.readings for _, ini in c.given.parts)
-        return _qualified(cited, record, st) if spelled else "unknown"
+        # only a reading that spells a given name out may confirm ("Bank R" has
+        # one reading with an initial and one with "Bank" as a given name)
+        spelled = tuple(c for c in cited.readings if any(not ini for _, ini in c.given.parts))
+        st = _compare_people(replace(cited, readings=spelled), record) if spelled else "unknown"
+        return _qualified(cited, record, st) if st in ("exact", "compatible") else "unknown"
     if record.organization:
         if cited.literal and cited.literal == record.organization:
             # "IBGE", "Petrobras": same name

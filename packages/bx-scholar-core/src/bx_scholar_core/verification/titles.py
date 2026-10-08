@@ -72,17 +72,23 @@ _TERM = (
     rf"|[{re.escape(_MATH)}]"
     r"|(?<=\d)[.,](?=\d)|(?<![\w.])\.(?=\d)"  # decimals: 0.5 is not 0 5, .5 is not 5
     r"|(?<=[^\W_])\.(?=[^\W_])"  # inside a term: Node.js, a.b (initialisms set aside)
-    r"|(?<=[^\W_])/(?=[^\W_])"  # x/y
-    r"|(?<=[^\W_])\*+(?=[^\W_])"  # x**2
-    r"|(?:(?<=\d)|(?<=\))|(?<=\b\w))!"  # factorial: n!, 10!, (n+1)! but not "Help!"
+    r"|/|_"  # x/y, x / y, _exit
+    r"|(?<=[^\W_])\*+(?=[^\W_])|(?<=[^\W_] )\*+(?= [^\W_])"  # x**2, x * y
+    r"|(?<=\b[^\W\d_])\*(?![^\W_])"  # x*
+    r"|(?:(?<=\d)|(?<=\))|(?<=\b\w))!+"  # factorial: n!, n!!, 10!, (n+1)! but not "Help!"
     # A minus is kept: U+2212 always ("x\u22121", "\u2212 10"); an ASCII hyphen as
     # the sign of a number ("-10", "-.5", "at - 10", but not the range "2010 -
     # 2020"). A hyphen inside a term ("COVID-19", "3-D") is not a sign.
     r"|\u2212|(?<![\w\s])-(?=\.?\d)|(?<=^)-(?= ?\.?\d)|(?<=[^\d\s] )-(?= ?\.?\d)"
 )
-_CODE_TERM = r"[^\W_]+|[^\w\s]|_"
-# "U.S." is "US": the dots of an initialism are not part of the terms
-_INITIALISM = re.compile(r"\b(?:[^\W\d_]\.){2,}")
+# Inside code every other mark counts too ("</b>", "a&b"), except brackets,
+# which a reader sees the same way with or without the code element ("f(x)").
+_CODE_EXTRA = r"|[^\w\s()\[\]{}]"
+# "U.S.", "U.S.A" are "US", "USA": the dots of an initialism are not part of
+# the terms. "a.b.method" is not an initialism.
+_INITIALISM = re.compile(r"\b[^\W\d_](?:\.[^\W\d_])+\.?(?!\.?[^\W_])")
+# Private-use marks the cleaning uses itself; they never belong to a title.
+_RESERVED = re.compile("[\ue000-\ue004]")
 
 
 def _shield(text: str) -> str:
@@ -94,9 +100,13 @@ def _plain(text: str) -> str:
     escape entities several times ("&amp;amp;eacute;") and escape tags
     ("&lt;b&gt;", even a whole "&lt;code&gt;" element). A <code> element is
     literal: decoded once and kept between marks, even inside <i>...</i>."""
+    text = _RESERVED.sub("", text)
     for _ in range(_MAX_UNESCAPE):
         cur = _CODE.sub(
-            lambda m: f"{CODE_OPEN}{_shield(html.unescape(m.group(1)))}{CODE_CLOSE}", text
+            lambda m: (
+                CODE_OPEN + _shield(_RESERVED.sub("", html.unescape(m.group(1)))) + CODE_CLOSE
+            ),
+            text,
         )
         cur = _SELF_CLOSING.sub("", cur)
         while (nxt := _PAIRED.sub(r"\2", cur)) != cur:
@@ -134,12 +144,12 @@ def tokens(text: str) -> list[str]:
     spaceless scripts become one token per character."""
     out: list[str] = []
     for i, chunk in enumerate(re.split(f"[{CODE_OPEN}{CODE_CLOSE}]", fold(text))):
-        if i % 2:  # inside code: every punctuation mark counts
-            out.extend(re.findall(_CODE_TERM, chunk))
-            continue
-        # one space, as displayed: the sign rule looks at the character before
+        # the same terms inside and outside code, so "x**2" and "<code>x**2</code>"
+        # agree; inside code the other marks count as well
+        pattern = _TERM + _CODE_EXTRA if i % 2 else _TERM
         chunk = _INITIALISM.sub(lambda m: m.group().replace(".", "") + " ", chunk)
-        for run in re.findall(_TERM, re.sub(r"\s+", " ", chunk)):
+        # one space, as displayed: the sign rule looks at the character before
+        for run in re.findall(pattern, re.sub(r"\s+", " ", chunk)):
             if run in ("\u2212", "-"):
                 run = "-"
             elif run == ",":

@@ -95,24 +95,23 @@ def _content(words: list[str]) -> int:
     return n
 
 
-def _display(text: str, depth: int = 0) -> str:
+def _display(text: str) -> str:
     """What a reader sees: markup removed (MathML, <i>, <sub>), spaces collapsed.
     Citations are written from this, never from the markup. Crossref escapes
     entities several times ("&amp;amp;eacute;") and escapes tags ("&lt;b&gt;");
     what is inside <code> is shown literally. A lone "<b>" is text."""
+    return re.sub(r"\s+", " ", _shown(text)).strip()
+
+
+def _shown(text: str, depth: int = 0) -> str:
     parts = re.split(r"<code\b[^>]*>(.*?)</code\s*>", text, flags=re.I | re.S)
     if len(parts) > 1:
-        shown = "".join(
-            html.unescape(x) if i % 2 else _display(x, depth) for i, x in enumerate(parts)
-        )
-        return re.sub(r"\s+", " ", shown).strip()
+        return "".join(html.unescape(x) if i % 2 else _shown(x, depth) for i, x in enumerate(parts))
     part = _SELF_CLOSING.sub("", text)
     while (nxt := _PAIRED.sub(r"\2", part)) != part:
         part = nxt
     nxt = html.unescape(part)
-    if nxt != text and depth < 10:
-        return _display(nxt, depth + 1)
-    return re.sub(r"\s+", " ", nxt).strip()
+    return _shown(nxt, depth + 1) if nxt != text and depth < 10 else nxt
 
 
 # Only complete typesetting elements: "x < 0 and y > 0" is text, not markup.
