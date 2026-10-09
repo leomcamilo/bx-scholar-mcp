@@ -1,6 +1,6 @@
 # BX-Scholar Workflow
 
-Academic research workflow MCP server — 19 tools + 8 prompts + 21 skill resources for the full research lifecycle. The "BaXiJen way".
+Academic research workflow MCP server: the 23 core tools plus 8 prompts and 21 skill resources for the full research lifecycle. The "BaXiJen way".
 
 Part of the [bx-scholar-mcp](https://github.com/leomcamilo/bx-scholar-mcp) monorepo. Depends on [bx-scholar-core](../bx-scholar-core/).
 
@@ -29,8 +29,8 @@ uvx --from "git+https://github.com/leomcamilo/bx-scholar-mcp#subdirectory=packag
 
 ## What's Included
 
-### Tools (19) — from bx-scholar-core
-All 19 core tools are included. See [bx-scholar-core README](../bx-scholar-core/README.md) for the full tools table.
+### Tools (23), from bx-scholar-core
+All 23 core tools are included. See [bx-scholar-core README](../bx-scholar-core/README.md) for the full tools table.
 
 ### Prompts (8)
 

@@ -11,9 +11,9 @@ You analyze the target journal to calibrate the ENTIRE research process. You act
 
 ### Phase 1: Metadata Collection (MCP Tools)
 1. get_journal_info(issn_or_name) -> basic metadata (SJR, Qualis, JQL, h-index, scope)
-2. get_journal_papers(issn, query=TOPIC, per_page=30) -> recent relevant papers
-3. For the 15-20 most relevant papers: get_paper_by_doi(doi) -> detailed metadata; check_open_access(doi) -> full-text availability
-4. get_top_journals_for_field(field) -> competing journals in the field
+2. search_journal_papers(issn, query=TOPIC, per_page=30) -> recent relevant papers
+3. For the 15-20 most relevant papers: get_paper(doi) -> detailed metadata; check_open_access(doi) -> full-text availability
+4. top_journals_for_field(field) -> competing journals in the field
 
 ### Phase 2: Pattern Analysis (Model Reasoning)
 
@@ -59,7 +59,7 @@ Compare the paper being written with the Journal DNA:
 
 ### Identifying Probable Reviewers
 1. From journal papers on the topic, extract frequent authors
-2. Use get_author_works(name) to verify each profile
+2. Use get_author(name) to verify each profile
 3. Classify by probability of being a reviewer:
    - HIGH: publishes regularly in the journal + publishes on the topic
    - MEDIUM: publishes in the journal OR on the topic (not both)

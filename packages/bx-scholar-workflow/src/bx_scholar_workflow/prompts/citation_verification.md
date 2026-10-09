@@ -6,23 +6,31 @@ NEVER submit a manuscript without running this protocol. This is a MANDATORY gat
 AI agents hallucinate references. They cite papers that do not exist, fabricate DOIs, and attribute quotes to wrong authors. This protocol ensures zero ghost references.
 
 ## Step 1: Compile all references
-List every citation in your manuscript: author, year, title fragment, DOI (if available).
+List every citation in your manuscript: authors, year, FULL title as cited, DOI (if available).
 
 ## Step 2: Batch verify
 ```
-batch_verify_references([
-    {"author": "Author1", "year": 2020, "title": "key words from title"},
-    {"author": "Author2", "year": 2019, "title": "key words from title"},
+batch_verify_references('[
+    {"author": "Mergel, I.; Edelmann, N.", "year": 2019, "title": "Defining digital transformation: Results from expert interviews", "title_mode": "full"},
+    {"author": "Silva et al.", "year": 2020, "title": "the full title as it appears in the reference list"},
     ...
-])
+]')
 ```
-This checks up to 30 references against CrossRef + OpenAlex in one call.
+The argument is a JSON string. One call checks up to 30 references against CrossRef + OpenAlex.
 
-## Step 3: Handle unverified references
-For each unverified reference:
-1. Try verify_citation(author, year, title) with alternative title fragments or spelling variants
-2. Try get_paper_by_doi(doi) if you have the DOI
-3. Search with search_openalex or search_crossref using author + key terms
+Give the full title, the main title (before the subtitle) or a literal passage of at least 4 content words, in the original word order. Loose key words do not confirm anything. Use title_mode="full" when you are giving the complete title: a different title then counts as a conflict.
+
+Each reference comes back with a status:
+- `verified`: exactly one work matches title, every cited author and the year (±1 lowers confidence to medium). Keep it, with the DOI returned.
+- `conflict`: the work was identified and contradicts the citation (other authors, year off by 2+, different full title). Fix the citation from the record in closest_match, or remove it.
+- `ambiguous`: several works match. Add the DOI, the full title or the year to tell them apart.
+- `insufficient`: not enough to decide (partial title, record without authors or year, nothing found). Follow next_action. Not finding a work does not prove it was made up, and finding a similar one does not prove it exists.
+
+## Step 3: Handle references that are not verified
+For each reference that is not verified:
+1. Read rejected_because and next_action, then try verify_citation(author, year, title_fragment, title_mode) again with the full title or the missing field
+2. Try get_paper(doi) if you have the DOI
+3. Search with search_papers(author + title words) (OpenAlex + CrossRef by default) to find the real record
 4. If STILL unverified after all attempts: **REMOVE THE CITATION ENTIRELY**. Do not guess. Do not keep it "just in case."
 
 ## Step 4: Check retractions
@@ -35,8 +43,8 @@ check_retraction(doi)
 
 ## Step 5: Enrich metadata
 For verified references missing metadata:
-- get_paper_by_doi(doi) — complete metadata (volume, issue, pages, publisher)
-- lookup_journal_ranking(issn) — verify journal quality (SJR, Qualis, JQL)
+- get_paper(doi) — complete metadata (volume, issue, pages, publisher)
+- rank_journal(issn) — verify journal quality (SJR, Qualis, JQL)
 
 ## Step 6: Quality audit
 - Verify that reference list meets target journal standards:

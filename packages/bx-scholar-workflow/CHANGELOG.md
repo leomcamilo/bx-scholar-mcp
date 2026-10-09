@@ -5,6 +5,16 @@ All notable changes to `bx-scholar-workflow` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- Prompts and skills told agents to call tools that no longer exist (`search_openalex`, `search_crossref`, `search_scielo`, `get_paper_by_doi`, `get_paper_citations`, `lookup_journal_ranking`, `get_journal_papers` and five more), so an agent following them failed on the first call. They now use the current names, and a test fails if a prompt or skill names a tool the server does not register
+- `citation_verification` asked for "key words from title", which `verify_citation` no longer accepts as proof; it now asks for the full title (or a literal passage of 4+ content words) and explains each status
+
+### Changed
+- Search steps use `search_papers(sources=...)` with the presets `br`, `latam`, `asia`, `bio` and `oa`, plus `search_theses` for theses and `snowball` for snowballing
+- Reading steps try `get_fulltext` before the PDF route
+
 ## [0.1.0] - 2026-04-24
 
 ### Added

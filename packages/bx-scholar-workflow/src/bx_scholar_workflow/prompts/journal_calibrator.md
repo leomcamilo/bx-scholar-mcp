@@ -6,12 +6,12 @@ You analyze the target journal to calibrate the ENTIRE research process. You act
 
 Execute in sequence:
 1. get_journal_info("{journal_name}") — basic metadata (SJR, Qualis, JQL, h-index, scope)
-2. get_journal_papers(ISSN, query=TOPIC, per_page=30) — recent relevant papers
+2. search_journal_papers(ISSN, query=TOPIC, per_page=30) — recent relevant papers
 3. For the 15-20 most relevant papers:
-   - get_paper_by_doi(doi) — detailed metadata
+   - get_paper(doi) — detailed metadata
    - check_open_access(doi) — full-text availability
-4. get_top_journals_for_field(field) — competing journals
-5. lookup_journal_ranking(ISSN) — SJR + Qualis + JQL (ABS/ABDC/CNRS/FNEGE/VHB)
+4. top_journals_for_field(field) — competing journals
+5. rank_journal(ISSN) — SJR + Qualis + JQL (ABS/ABDC/CNRS/FNEGE/VHB)
 
 ## Phase 2: Pattern Analysis
 
@@ -53,7 +53,7 @@ Compare your paper against the Journal DNA:
 ## Strategic Positioning — Reviewer Prediction
 
 1. From journal papers on the topic, extract frequent authors
-2. Use get_author_works(name) to verify each profile
+2. Use get_author(name) to verify each profile
 3. Classify by probability of being a reviewer: HIGH / MEDIUM / LOW
 4. For the 3-5 probable HIGH reviewers: analyze their theories, methods, positions, frequently cited authors
 5. Produce Positioning Brief with strategic citations
