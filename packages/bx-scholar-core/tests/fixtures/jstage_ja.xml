@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed  xmlns="http://www.w3.org/2005/Atom"
+  xmlns:prism="http://prismstandard.org/namespaces/basic/2.0/"
+  xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/"
+  xml:lang="ja" > 
+  <result>
+    <status>0</status>
+    <message/>
+  </result>
+  <title>Articles</title>
+  <link href="https://api.jstage.jst.go.jp/searchapi/do?service=3&amp;keyword=%E9%83%BD%E5%B8%82%E4%BA%A4%E9%80%9A&amp;count=3"/>
+  <id>https://api.jstage.jst.go.jp/searchapi/do?service=3&amp;keyword=%E9%83%BD%E5%B8%82%E4%BA%A4%E9%80%9A&amp;count=3</id>
+  <servicecd>3</servicecd>
+  <updated>2026-10-09T08:51+09:00</updated>
+  <opensearch:totalResults>83</opensearch:totalResults>
+  <opensearch:startIndex>1</opensearch:startIndex>
+  <opensearch:itemsPerPage>3</opensearch:itemsPerPage>
+  <entry>
+    <article_title>
+      <en><![CDATA[Fundamental Study to Commutation Problem]]></en>
+      <ja><![CDATA[通勤交通問題に関する基礎的考察]]></ja>
+    </article_title>
+    <article_link>
+      <en>https://www.jstage.jst.go.jp/article/journalcpij/4/0/4_95/_article</en>
+      <ja>https://www.jstage.jst.go.jp/article/journalcpij/4/0/4_95/_article/-char/ja/</ja>
+    </article_link>
+    <author>
+      <en>
+        <name><![CDATA[Masuo Kashiwadani]]></name>
+      </en>
+      <ja>
+        <name><![CDATA[柏谷 増男]]></name>
+      </ja>
+    </author>
+    <cdjournal>journalcpij</cdjournal>
+    <material_title>
+      <en><![CDATA[Journal of the City Planning Institute of Japan]]></en>
+      <ja><![CDATA[都市計画論文集]]></ja>
+    </material_title>
+    <prism:issn>0916-0647</prism:issn>
+    <prism:eIssn>2185-0593</prism:eIssn>
+    <prism:volume>4</prism:volume>
+    <prism:number>0</prism:number>
+    <prism:startingPage>95</prism:startingPage>
+    <prism:endingPage>99</prism:endingPage>
+    <pubyear>1969</pubyear>
+    <prism:doi>10.11361/journalcpij.4.95</prism:doi>
+    <systemcode>1</systemcode>
+    <systemname>J-STAGE</systemname>
+    <title><![CDATA[通勤交通問題に関する基礎的考察]]></title>
+    <link href="https://www.jstage.jst.go.jp/article/journalcpij/4/0/4_95/_article/-char/ja/"/>
+    <id>https://www.jstage.jst.go.jp/article/journalcpij/4/0/4_95/_article/-char/ja/</id>
+    <updated>2020-11-01T09:00+09:00</updated>
+  </entry>
+  <entry>
+    <article_title>
+      <en><![CDATA[A Study on the Effects of Urban Transport on Passengers Observed in Literary Works]]></en>
+      <ja><![CDATA[文学作品にみる都市交通手段が移動者に与える影響に関する研究]]></ja>
+    </article_title>
+    <article_link>
+      <en>https://www.jstage.jst.go.jp/article/journalcpij/29/0/29_115/_article</en>
+      <ja>https://www.jstage.jst.go.jp/article/journalcpij/29/0/29_115/_article/-char/ja/</ja>
+    </article_link>
+    <author>
+      <en>
+        <name><![CDATA[Takaaki Kato]]></name>
+        <name><![CDATA[Noboru Hidano]]></name>
+      </en>
+      <ja>
+        <name><![CDATA[加藤 尊秋]]></name>
+        <name><![CDATA[肥田野 登]]></name>
+      </ja>
+    </author>
+    <cdjournal>journalcpij</cdjournal>
+    <material_title>
+      <en><![CDATA[Journal of the City Planning Institute of Japan]]></en>
+      <ja><![CDATA[都市計画論文集]]></ja>
+    </material_title>
+    <prism:issn>0916-0647</prism:issn>
+    <prism:eIssn>2185-0593</prism:eIssn>
+    <prism:volume>29</prism:volume>
+    <prism:number>0</prism:number>
+    <prism:startingPage>115</prism:startingPage>
+    <prism:endingPage>120</prism:endingPage>
+    <pubyear>1994</pubyear>
+    <prism:doi>10.11361/journalcpij.29.115</prism:doi>
+    <systemcode>1</systemcode>
+    <systemname>J-STAGE</systemname>
+    <title><![CDATA[文学作品にみる都市交通手段が移動者に与える影響に関する研究]]></title>
+    <link href="https://www.jstage.jst.go.jp/article/journalcpij/29/0/29_115/_article/-char/ja/"/>
+    <id>https://www.jstage.jst.go.jp/article/journalcpij/29/0/29_115/_article/-char/ja/</id>
+    <updated>2019-02-01T09:00+09:00</updated>
+  </entry>
+  <entry>
+    <article_title>
+      <en><![CDATA[Investigation of urban transport policy and land-use regulation for eivironmental load reduction]]></en>
+      <ja><![CDATA[環境負荷軽減のための都市交通政策と土地利用規制の検討]]></ja>
+    </article_title>
+    <article_link>
+      <en>https://www.jstage.jst.go.jp/article/ajg/2011s/0/2011s_0_192/_article</en>
+      <ja>https://www.jstage.jst.go.jp/article/ajg/2011s/0/2011s_0_192/_article/-char/ja/</ja>
+    </article_link>
+    <author>
+      <en>
+        <name><![CDATA[Koichi TANAKA]]></name>
+      </en>
+      <ja>
+        <name><![CDATA[田中 耕市]]></name>
+      </ja>
+    </author>
+    <cdjournal>ajg</cdjournal>
+    <material_title>
+      <en><![CDATA[Proceedings of the General Meeting of the Association of Japanese Geographers]]></en>
+      <ja><![CDATA[日本地理学会発表要旨集]]></ja>
+    </material_title>
+    <prism:issn>         </prism:issn>
+    <prism:eIssn>         </prism:eIssn>
+    <prism:volume>2011s</prism:volume>
+    <prism:number>0</prism:number>
+    <prism:startingPage>192</prism:startingPage>
+    <prism:endingPage>192</prism:endingPage>
+    <pubyear>2011</pubyear>
+    <prism:doi>10.14866/ajg.2011s.0.192.0</prism:doi>
+    <systemcode>1</systemcode>
+    <systemname>J-STAGE</systemname>
+    <title><![CDATA[環境負荷軽減のための都市交通政策と土地利用規制の検討]]></title>
+    <link href="https://www.jstage.jst.go.jp/article/ajg/2011s/0/2011s_0_192/_article/-char/ja/"/>
+    <id>https://www.jstage.jst.go.jp/article/ajg/2011s/0/2011s_0_192/_article/-char/ja/</id>
+    <updated>2011-05-24T09:00+09:00</updated>
+  </entry>
+</feed>

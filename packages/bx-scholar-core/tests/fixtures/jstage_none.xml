@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed  xmlns="http://www.w3.org/2005/Atom"
+  xmlns:prism="http://prismstandard.org/namespaces/basic/2.0/"
+  xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/"
+  xml:lang="ja" > 
+  <result>
+    <status>ERR_001</status>
+    <message>ERR_001</message>
+  </result>
+  <title>Articles</title>
+  <link href="https://api.jstage.jst.go.jp/searchapi/do?service=3&amp;keyword=qzxqzxqzxnotaword&amp;count=3"/>
+  <id>https://api.jstage.jst.go.jp/searchapi/do?service=3&amp;keyword=qzxqzxqzxnotaword&amp;count=3</id>
+  <servicecd>3</servicecd>
+  <updated>2026-10-09T08:51+09:00</updated>
+  <opensearch:totalResults/>
+  <opensearch:startIndex/>
+  <opensearch:itemsPerPage/>
+  <entry>
+    <title/>
+    <link/>
+    <id/>
+    <updated/>
+  </entry>
+</feed>

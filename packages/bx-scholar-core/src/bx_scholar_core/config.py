@@ -68,6 +68,7 @@ class Settings(BaseSettings):
     # Optional, free (https://core.ac.uk/services/api). Search works without it;
     # CORE's extracted full text needs it.
     core_api_key: str = ""
+    cinii_appid: str = ""  # optional, free: https://support.nii.ac.jp/en/cinii/api/developer
 
     # Paths. Relative values resolve against project_root, not cwd. The bare
     # names (DATA_DIR, ...) are kept as aliases for configs written before the

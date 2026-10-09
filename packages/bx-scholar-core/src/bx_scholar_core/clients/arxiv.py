@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import xml.etree.ElementTree as ET
+from defusedxml import ElementTree as ET
 
 from bx_scholar_core.clients.base import AsyncHTTPClient
 from bx_scholar_core.models.paper import MAX_AUTHORS, Author, Paper
