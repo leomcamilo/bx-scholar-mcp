@@ -10,8 +10,8 @@ Meta-analysis is the quantitative synthesis of results from independent empirica
 ## Prerequisites
 - bx-prisma for systematic search protocol (PRISMA-MA variant)
 - bx-query + bx-curator for search and study selection
-- Use search_openalex, search_crossref, search_semantic_scholar for comprehensive search
-- Use lookup_journal_ranking for quality assessment of included studies
+- Use search_papers with sources="openalex,crossref,semantic_scholar", plus "bio" (Europe PMC) for health topics and "br"/"latam" plus search_theses for grey literature from Brazil and Latin America
+- Use rank_journal for quality assessment of included studies
 
 ## PRISMA-MA Specific Inclusion Criteria
 - Studies MUST report: sample size (N), effect size (d, r, OR, RR), or sufficient data to calculate them

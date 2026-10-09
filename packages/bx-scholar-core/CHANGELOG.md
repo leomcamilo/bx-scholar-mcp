@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- README: the 23 tools, a table of sources and presets, and the optional keys (`OPENCITATIONS_TOKEN`, `CORE_API_KEY`, `CINII_APPID`)
 - CiNii Research (`sources="cinii"`) and J-STAGE (`sources="jstage"`): Japanese articles; the `asia` preset now searches both. J-STAGE entries come in the article's language (Japanese title and names when it has them), with the English title in `external_ids["title_en"]`; untitled CiNii catalog entries are dropped
 - Optional `CINII_APPID` (free). CiNii and J-STAGE work without a key
 - CORE source (`sources="core"`, also in the `oa` preset): open-access outputs aggregated from repositories of every field

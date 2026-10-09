@@ -9,7 +9,7 @@ You filter papers using REAL data from SJR (53,000+ journals), Qualis CAPES (33,
 
 ### For EACH paper received:
 1. Extract journal ISSN
-2. Query ranking: lookup_journal_ranking(issn)
+2. Query ranking: rank_journal(issn)
 3. Classify in tier:
 
 | Tier | SJR Criterion | Qualis Criterion | Action |

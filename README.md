@@ -24,11 +24,11 @@ This monorepo contains two publishable packages:
 
 Infrastructure for academic search, rankings, and verification. Enxuto, testado, rapido.
 
-- **Multi-source search** — OpenAlex, CrossRef, ArXiv, SciELO, Semantic Scholar, Unpaywall, Tavily
-- **Journal rankings** — SJR (32K+), Qualis CAPES (170K+), Harzing's JQL (ABS/ABDC/CNRS/FNEGE/VHB)
-- **Citation verification** — anti-hallucination pipeline with retraction detection
-- **Bibliometrics** — citation networks, co-citation clusters, keyword trends
-- **Full-text pipeline** — OA check, PDF download, ML-powered text extraction
+- **Multi-source search.** One `search_papers` call reaches OpenAlex, CrossRef, ArXiv, Semantic Scholar, Europe PMC, CORE, SciELO Brasil, BDTD, OasisBR, LA Referencia, CiNii Research, J-STAGE and Tavily, with presets for Brazil (`br`), Latin America (`latam`), Japan (`asia`), health (`bio`) and open access (`oa`). `search_theses` covers Brazilian and Latin American theses.
+- **Journal rankings.** SJR (32K+), Qualis CAPES (170K+), Harzing's JQL (ABS/ABDC/CNRS/FNEGE/VHB).
+- **Citation verification.** `verify_citation` confirms a reference only when exactly one work matches its title, every cited author and the year; otherwise it says whether the citation conflicts with a record, matches several works or lacks the data to decide. Retractions are checked through Crossref.
+- **Bibliometrics.** Citation networks, snowballing and citing/cited lists merged from OpenAlex and OpenCitations, co-citation clusters, keyword trends.
+- **Full text.** `get_fulltext` returns open-access text by section from Europe PMC or CORE without a PDF; for the rest, OA check (Unpaywall, then CORE), PDF download and text extraction.
 - **Cache** — DuckDB-backed persistent cache with configurable TTLs
 - **Rate limiting** — per-source limits with retry and backoff
 
@@ -99,7 +99,10 @@ claude mcp add bx-scholar-core -- uv run --directory /path/to/packages/bx-schola
 | `POLITE_EMAIL` | **Yes** | Email for polite API pools (OpenAlex, CrossRef, Unpaywall) |
 | `TAVILY_API_KEY` | No | [Tavily](https://tavily.com) web search |
 | `S2_API_KEY` | No | [Semantic Scholar](https://www.semanticscholar.org/product/api#api-key-form) — higher rate limits |
-| `OPENALEX_API_KEY` | No | [OpenAlex](https://openalex.org/settings/api) (free) — without it, OpenAlex limits requests by a daily budget shared per IP |
+| `OPENALEX_API_KEY` | No | [OpenAlex](https://openalex.org/settings/api) (free). Without it, OpenAlex limits requests by a daily budget shared per IP |
+| `OPENCITATIONS_TOKEN` | No | [OpenCitations](https://opencitations.net/accesstoken) (free). Raises the rate limit |
+| `CORE_API_KEY` | No | [CORE](https://core.ac.uk/services/api) (free). Search works without it; `get_fulltext` reads CORE's extracted text only with a key |
+| `CINII_APPID` | No | [CiNii Research](https://support.nii.ac.jp/en/cinii/api/developer) application ID (free). Search works without it |
 | `BX_SCHOLAR_HOME` | No | Directory holding `.env` and `data/`. Default: the repo root, found by walking up from the working directory |
 | `BX_SCHOLAR_DATA_DIR` | No | Ranking data directory. Relative paths resolve against `BX_SCHOLAR_HOME` (default: `data/`) |
 
@@ -119,9 +122,10 @@ The server works without ranking files — ranking tools return `"N/A"` for miss
 
 - **Qualis CAPES** — the only MCP server that indexes Brazilian academic rankings
 - **JQL** — ABS, ABDC, CNRS, FNEGE, VHB rankings for business/management schools
-- **SciELO** — built-in LATAM/Brazil Open Access coverage
+- **Brazil, Latin America and Japan.** SciELO Brasil, BDTD, OasisBR, LA Referencia, CiNii Research and J-STAGE hold theses and articles that OpenAlex barely indexes. OpenAlex has about 52K Brazilian theses; BDTD lists over 1.1M records (October 2026).
 - **Brazilian context** — LGPD compliance, ABNT formatting, ENANPAD/CAPES workflows
-- **Anti-hallucination** — verify every citation against CrossRef + OpenAlex before using it
+- **Anti-hallucination.** Verify every citation against CrossRef + OpenAlex before using it. The verifier runs in CI against a frozen benchmark of 600 real works and about 12K labeled citations.
+- **Free academic sources.** Every academic source works without paying, and their API keys are free and optional. The one paid service, Tavily web search, stays off unless you set its key.
 
 ## Contributing
 
